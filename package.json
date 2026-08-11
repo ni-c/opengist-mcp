@@ -1,0 +1,59 @@
+{
+  "name": "opengist-mcp",
+  "version": "0.1.0",
+  "mcpName": "io.github.ni-c/opengist-mcp",
+  "description": "Model Context Protocol (MCP) server for Opengist, the self-hosted pastebin powered by Git",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "opengist",
+    "gist",
+    "pastebin",
+    "snippets"
+  ],
+  "license": "MIT",
+  "author": "Willi Thiel",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ni-c/opengist-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ni-c/opengist-mcp/issues"
+  },
+  "homepage": "https://github.com/ni-c/opengist-mcp#readme",
+  "type": "module",
+  "bin": {
+    "opengist-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "undici": "^8.10.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.2.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.8.1",
+    "prettier": "^3.6.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.35.0",
+    "vitest": "^4.1.10"
+  }
+}

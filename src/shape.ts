@@ -408,19 +408,17 @@ export function buildFilesPayload(
     seen.add(target);
   }
 
-  // Invariant: nothing this builder emits may be read as a deletion. The spec
-  // deletes an entry that is null or carries neither field; empty content is
-  // rejected on top of that, because Opengist drops contentless files on create
-  // and it is undocumented whether "" counts as absent on update. Deletion must
-  // go through delete_gist_files, which has a confirmation gate.
+  // Invariant: nothing this builder emits may be read as a deletion. The API
+  // deletes an entry that is null or carries neither field — a presence check,
+  // verified against Opengist 2026-08-15: content:"" keeps the file and empties
+  // it. Deletion must go through delete_gist_files, which is confirmation-gated.
   for (const [name, entry] of Object.entries(payload.files)) {
     if (
       entry === null ||
-      (entry.content === undefined && entry.filename === undefined) ||
-      entry.content === ''
+      (entry.content === undefined && entry.filename === undefined)
     ) {
       throw new Error(
-        `opengist-mcp: refusing to send an entry for "${name}" that the API could interpret as a deletion`
+        `opengist-mcp: refusing to send an entry for "${name}" that the API would interpret as a deletion`
       );
     }
   }

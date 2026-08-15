@@ -148,17 +148,16 @@ describe('buildFilesPayload', () => {
     }
   });
 
-  it('refuses empty content, which the API may read as a deletion', () => {
-    // Opengist drops contentless files on create, and it is undocumented
-    // whether "" counts as absent on update. Deleting must go through
-    // delete_gist_files, which is confirmation-gated — so this never ships.
-    expect(() =>
-      buildFilesPayload(
-        [{ op: 'write', filename: 'README.md', content: '' }],
-        existing,
-        false
-      )
-    ).toThrow(/deletion/);
+  it('passes empty content through as a blanked file, not a deletion', () => {
+    // Verified against Opengist 2026-08-15: an update entry with content:""
+    // keeps the file and empties it. Only an entry that is null or carries
+    // neither content nor filename deletes — that is what the invariant blocks.
+    const payload = buildFilesPayload(
+      [{ op: 'write', filename: 'README.md', content: '' }],
+      existing,
+      false
+    );
+    expect(payload.files['README.md']).toEqual({ content: '' });
   });
 
   it('refuses an unknown filename and names the case-insensitive near match', () => {

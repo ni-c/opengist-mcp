@@ -35,11 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   confirmation message, and the "unknown filename" error no longer echoes the
   requested or the existing filenames. Both are attacker-influenceable text in a
   message that a model reads — the rule the other confirmations already followed.
-- `update_gist` refuses empty file content. The API deletes an entry that carries
-  neither content nor filename, Opengist drops contentless files on create, and it is
-  undocumented whether `""` counts as absent on update — so an empty write is refused
-  rather than risking a deletion that bypasses the confirmation gate. The payload
-  invariant rejects it a second time, independently of the input schema.
+- The "nothing we send may be read as a deletion" invariant is now backed by a
+  measurement instead of an assumption. Verified against Opengist on 2026-08-15: on
+  **update**, an entry with `content: ""` keeps the file and empties it; only an entry
+  that is `null` or carries neither `content` nor `filename` deletes. On **create**,
+  by contrast, a file with empty content is silently dropped — which is why
+  `create_gist` requires non-empty content and `update_gist` does not.
 - Gist titles, descriptions and topics are now tagged as untrusted input in
   `list_gists`, `list_gist_forks`, `search_gists` and the gist detail. Only file
   contents carried that note before, while `list_gists` with `scope: "public"` returns

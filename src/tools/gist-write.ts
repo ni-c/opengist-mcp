@@ -171,18 +171,16 @@ export function registerGistWriteTools(
               z.object({
                 op: z.literal('write'),
                 filename,
-                // Non-empty like create_gist: the API spec deletes a file whose
-                // entry carries neither content nor filename, and Opengist drops
-                // contentless files on create. Whether it also treats "" as
-                // absent on update is not documented, so an empty write is
-                // refused rather than risking a delete that bypasses the
-                // confirmation gate of delete_gist_files. The tool description
-                // promises it "can never delete a file"; this keeps that true.
+                // Empty content is allowed here, unlike in create_gist. Verified
+                // against Opengist 2026-08-15: an update entry carrying
+                // content:"" keeps the file and empties it, while the same shape
+                // on create makes the file disappear. Deletion needs the entry to
+                // carry neither content nor filename, which buildFilesPayload
+                // refuses to emit.
                 content: z
                   .string()
-                  .min(1)
                   .describe(
-                    'The complete new content of the file. Must not be empty — use delete_gist_files to remove a file.'
+                    'The complete new content of the file; may be empty to blank the file. Use delete_gist_files to remove it.'
                   ),
               }),
               z.object({
@@ -191,11 +189,8 @@ export function registerGistWriteTools(
                 newFilename: filename.describe('The new filename'),
                 content: z
                   .string()
-                  .min(1)
                   .optional()
-                  .describe(
-                    'Optionally replace the content while renaming. Must not be empty.'
-                  ),
+                  .describe('Optionally replace the content while renaming'),
               }),
             ])
           )

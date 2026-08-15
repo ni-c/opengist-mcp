@@ -27,6 +27,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Node majors are curated by hand: Dependabot offers the newest tag, but
+      # the runtime image has to sit on an ACTIVE LTS line, and half of the
+      # majors are not LTS at all (26 is a current release, 24 is LTS Krypton).
+      # Digest and minor refreshes of the pinned line still come through.
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /

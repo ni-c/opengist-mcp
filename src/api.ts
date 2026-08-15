@@ -4,7 +4,11 @@ import {
   type RequestInit as UndiciRequestInit,
 } from 'undici';
 
-import type { Config } from './config.js';
+import {
+  missingConfigKeys,
+  missingConfigMessage,
+  type Config,
+} from './config.js';
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -42,6 +46,7 @@ export class OpengistApiError extends Error {
  * Personal Access Token via the `Bearer` scheme.
  */
 export class OpengistApi {
+  private readonly config: Config;
   private readonly baseUrl: string;
   private readonly authHeader: string;
   /**
@@ -52,8 +57,9 @@ export class OpengistApi {
   private readonly insecureDispatcher?: Agent;
 
   constructor(config: Config) {
-    this.baseUrl = config.baseUrl;
-    this.authHeader = `Bearer ${config.token}`;
+    this.config = config;
+    this.baseUrl = config.baseUrl ?? '';
+    this.authHeader = `Bearer ${config.token ?? ''}`;
     if (config.insecureTls) {
       this.insecureDispatcher = new Agent({
         connect: { rejectUnauthorized: false },
@@ -67,6 +73,12 @@ export class OpengistApi {
     accept: string,
     body?: unknown
   ): Promise<{ status: number; text: string; headers: ResponseHeaders }> {
+    // The credentials are only required here, not at startup, so that the
+    // server can still be started and introspected without them.
+    const missing = missingConfigKeys(this.config);
+    if (missing.length > 0) {
+      throw new Error(missingConfigMessage(missing));
+    }
     const headers: Record<string, string> = {
       Authorization: this.authHeader,
       Accept: accept,

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { OpengistApiError, type OpengistApi } from '../api.js';
 import { jsonResult, run, ToolInputError } from '../result.js';
 import { gistId, gistPath, username } from '../schema.js';
+import { shapeUserDetail, type RawUser } from '../shape.js';
 
 /**
  * Checks whether the gist is liked. The API answers 204 for "liked" and 404
@@ -65,9 +66,30 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
             : userId !== undefined
               ? `/user/${encodeURIComponent(String(userId))}`
               : '/user';
+        const response = await api.get(path);
+        // Report a non-object body instead of allowlisting it into an empty
+        // object: that shape means the instance answered with HTML or broken
+        // JSON (a proxy error page returned with status 200, for example), and
+        // silently showing "{}" would hide the actual problem.
+        if (
+          typeof response !== 'object' ||
+          response === null ||
+          Array.isArray(response)
+        ) {
+          const kind =
+            response === null
+              ? 'an empty body'
+              : Array.isArray(response)
+                ? 'an array'
+                : `a ${typeof response} value`;
+          throw new Error(
+            `The Opengist API returned ${kind} instead of a user object for ${path}. ` +
+              'Check that OPENGIST_URL points at the Opengist instance itself and not at a proxy or login page.'
+          );
+        }
         return jsonResult({
           self: name === undefined && userId === undefined,
-          user: await api.get(path),
+          user: shapeUserDetail(response as RawUser),
         });
       })
   );

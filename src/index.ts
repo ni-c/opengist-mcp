@@ -15,8 +15,13 @@ async function main(): Promise<void> {
 
   const server = createServer(config);
   await server.connect(new StdioServerTransport());
+  const readOnlyNote = config.readOnly
+    ? ' (read-only: no write tools registered)'
+    : '';
   console.error(
-    `opengist-mcp: connected, targeting ${config.baseUrl}${config.readOnly ? ' (read-only: no write tools registered)' : ''}`
+    config.baseUrl
+      ? `opengist-mcp: connected, targeting ${config.baseUrl}${readOnlyNote}`
+      : `opengist-mcp: connected without configuration — tools are listed but every call will fail${readOnlyNote}`
   );
 }
 

@@ -66,14 +66,36 @@ describe('loadConfig', () => {
     expect(environment.OPENGIST_URL).toBe('https://gist.example.com');
   });
 
-  it('exits when required variables are missing', () => {
+  it('warns but does not exit when required variables are missing', () => {
+    // Registries and sandbox inspectors start the server without credentials
+    // and expect the MCP handshake and tools/list to still work.
     const exit = mockExit();
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(() => loadConfig({})).toThrow('process.exit');
-    expect(exit).toHaveBeenCalledWith(1);
+
+    const config = loadConfig({});
+
+    expect(config).toEqual({
+      url: undefined,
+      baseUrl: undefined,
+      token: undefined,
+      readOnly: false,
+      insecureTls: false,
+    });
+    expect(exit).not.toHaveBeenCalled();
     expect(String(error.mock.calls[0]?.[0])).toContain(
       'OPENGIST_URL, OPENGIST_TOKEN'
     );
+  });
+
+  it('keeps read-only and insecure-TLS flags when credentials are missing', () => {
+    mockExit();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const config = loadConfig({
+      OPENGIST_READ_ONLY: 'true',
+      OPENGIST_INSECURE_TLS: 'true',
+    });
+    expect(config.readOnly).toBe(true);
+    expect(config.insecureTls).toBe(true);
   });
 
   it('exits on an invalid URL', () => {

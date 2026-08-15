@@ -19,10 +19,12 @@ import {
 } from '../schema.js';
 import {
   Notes,
+  hasUntrustedMetadata,
   shapeCommit,
   shapeGistDetail,
   shapeGistSummary,
   UNTRUSTED_CONTENT_NOTE,
+  UNTRUSTED_METADATA_NOTE,
   looksBinary,
   type RawGist,
 } from '../shape.js';
@@ -114,6 +116,8 @@ export function registerGistReadTools(
         const pagination = parsePagination(response.headers, currentPage, size);
         const notes = new Notes();
         notes.addAll(paginationNotes(pagination, gists.length, 'list_gists'));
+        if (gists.some(hasUntrustedMetadata))
+          notes.add(UNTRUSTED_METADATA_NOTE);
         return jsonResult({
           scope,
           username: user,
@@ -335,6 +339,8 @@ export function registerGistReadTools(
         notes.addAll(
           paginationNotes(pagination, forks.length, 'list_gist_forks')
         );
+        if (forks.some(hasUntrustedMetadata))
+          notes.add(UNTRUSTED_METADATA_NOTE);
         return jsonResult({
           gistId: id,
           pagination,

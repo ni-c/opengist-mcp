@@ -171,9 +171,19 @@ export function registerGistWriteTools(
               z.object({
                 op: z.literal('write'),
                 filename,
+                // Non-empty like create_gist: the API spec deletes a file whose
+                // entry carries neither content nor filename, and Opengist drops
+                // contentless files on create. Whether it also treats "" as
+                // absent on update is not documented, so an empty write is
+                // refused rather than risking a delete that bypasses the
+                // confirmation gate of delete_gist_files. The tool description
+                // promises it "can never delete a file"; this keeps that true.
                 content: z
                   .string()
-                  .describe('The complete new content of the file'),
+                  .min(1)
+                  .describe(
+                    'The complete new content of the file. Must not be empty — use delete_gist_files to remove a file.'
+                  ),
               }),
               z.object({
                 op: z.literal('rename'),
@@ -181,8 +191,11 @@ export function registerGistWriteTools(
                 newFilename: filename.describe('The new filename'),
                 content: z
                   .string()
+                  .min(1)
                   .optional()
-                  .describe('Optionally replace the content while renaming'),
+                  .describe(
+                    'Optionally replace the content while renaming. Must not be empty.'
+                  ),
               }),
             ])
           )
@@ -234,13 +247,49 @@ export function registerGistWriteTools(
           (VISIBILITY_RANK[newVisibility] ?? 0) >
             (VISIBILITY_RANK[current] ?? 0)
         ) {
-          const resource = `gist:${id}:visibility:${newVisibility}`;
+          // The token is bound to the ENTIRE effect of this call, not just the
+          // new visibility. Otherwise a confirmation obtained for "make it
+          // public" could be replayed with extra fileOps, title or description
+          // attached — the user would have approved disclosure and additionally
+          // get content changes they were never shown.
+          const effectFingerprint = createHash('sha256')
+            .update(
+              JSON.stringify({
+                title: title ?? null,
+                description: description ?? null,
+                visibility: newVisibility,
+                allowCreate,
+                fileOps:
+                  (fileOps as FileOp[] | undefined)?.map((op) =>
+                    op.op === 'write'
+                      ? ['write', op.filename, op.content]
+                      : [
+                          'rename',
+                          op.filename,
+                          op.newFilename,
+                          op.content ?? null,
+                        ]
+                  ) ?? null,
+              })
+            )
+            .digest('hex')
+            .slice(0, 16);
+          const resource = `gist:${id}:update:${newVisibility}:${effectFingerprint}`;
           if (!confirmations.consume(resource, confirmToken)) {
             const token = confirmations.issue(resource);
+            const opCount = fileOps === undefined ? 0 : fileOps.length;
+            const alsoChanges = [
+              title !== undefined && 'the title',
+              description !== undefined && 'the description',
+              opCount > 0 && `${opCount} file operation(s)`,
+            ].filter((v): v is string => Boolean(v));
             return errorResult(
               `Changing the visibility of gist ${id} from ${current} to ${newVisibility} makes it readable by others and cannot be undone for anyone who already saw it. ` +
                 `The gist has ${Object.keys(gist.files ?? {}).length} file(s). Title and description are withheld here on purpose (they are user-supplied text). ` +
-                `Confirm with the user, then call update_gist again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}".`
+                (alsoChanges.length > 0
+                  ? `This same call also changes ${alsoChanges.join(', ')} — confirm those too. `
+                  : 'This call changes nothing but the visibility. ') +
+                `Confirm with the user, then call update_gist again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}" and otherwise identical arguments — the token only works for exactly this set of changes.`
             );
           }
         }
@@ -338,8 +387,11 @@ export function registerGistWriteTools(
         const existing = Object.keys(gist.files ?? {});
         const unknown = sorted.filter((name) => !existing.includes(name));
         if (unknown.length > 0) {
+          // Neither list is quoted: `unknown` is caller-supplied and `existing`
+          // comes straight from the API, i.e. from whoever wrote the gist.
           throw new ToolInputError(
-            `Gist "${id}" has no file(s) named ${unknown.map((name) => `"${name}"`).join(', ')}. Existing files: ${existing.map((name) => `"${name}"`).join(', ')}.`
+            `${unknown.length} of the requested file(s) do not exist in gist "${id}", which currently has ${existing.length} file(s). ` +
+              'Call get_gist to see the current filenames.'
           );
         }
         if (sorted.length === existing.length) {
@@ -351,10 +403,15 @@ export function registerGistWriteTools(
         if (!confirmations.consume(resource, confirmToken)) {
           const token = confirmations.issue(resource);
           const previousSha = gist.commits?.[0]?.version;
+          // The filenames are deliberately NOT quoted back here. They are
+          // caller-supplied and may have been copied out of a foreign gist, so
+          // echoing them would put attacker-chosen text into a confirmation
+          // prompt. The caller already knows which files it asked for, and the
+          // token is bound to that exact set anyway.
           return errorResult(
-            `Deleting ${sorted.length} file(s) from gist ${id}: ${sorted.map((name) => `"${name}"`).join(', ')}. ` +
+            `Deleting ${sorted.length} file(s) from gist ${id}, as listed in this call's filenames argument. ` +
               `They will be gone from the current revision${previousSha !== undefined ? ` (recoverable via get_gist with sha="${previousSha}")` : ''}. ` +
-              `Confirm with the user, then call delete_gist_files again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}".`
+              `Confirm the file list with the user, then call delete_gist_files again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}".`
           );
         }
 

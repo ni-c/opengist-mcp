@@ -137,7 +137,7 @@ describe('buildFilesPayload', () => {
     const payload = buildFilesPayload(
       [
         { op: 'rename', filename: 'main.go', newFilename: 'app.go' },
-        { op: 'write', filename: 'README.md', content: '' },
+        { op: 'write', filename: 'README.md', content: 'x' },
       ],
       existing,
       false
@@ -146,6 +146,19 @@ describe('buildFilesPayload', () => {
       expect(entry).not.toBeNull();
       expect(Object.keys(entry).length).toBeGreaterThan(0);
     }
+  });
+
+  it('refuses empty content, which the API may read as a deletion', () => {
+    // Opengist drops contentless files on create, and it is undocumented
+    // whether "" counts as absent on update. Deleting must go through
+    // delete_gist_files, which is confirmation-gated — so this never ships.
+    expect(() =>
+      buildFilesPayload(
+        [{ op: 'write', filename: 'README.md', content: '' }],
+        existing,
+        false
+      )
+    ).toThrow(/deletion/);
   });
 
   it('refuses an unknown filename and names the case-insensitive near match', () => {

@@ -42,7 +42,11 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match package version $version" >&2
             exit 1
           fi
-      - run: npm ci
+      # --ignore-scripts: this job holds an OIDC credential for Trusted
+      # Publishing, so a postinstall script of any transitive dependency must
+      # not run here. The package's own prepublishOnly (lint, test, build) still
+      # runs during npm publish.
+      - run: npm ci --ignore-scripts
       - run: npm publish --provenance
 
   mcp-registry:
@@ -60,8 +64,19 @@ jobs:
           jq --arg v "$version" '.version = $v | .packages[0].version = $v' \
             server.json > server.tmp && mv server.tmp server.json
       - name: Install mcp-publisher
+        # Pinned to a version with a checksum instead of following
+        # releases/latest: this job holds the registry OIDC credential, and
+        # every GitHub Action around it is SHA-pinned — piping an unverified
+        # binary from the network into the same job would defeat that.
+        # Bump both values together; the checksum is of the linux_amd64 tarball.
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.1
+          MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
         run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          curl -fsSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
       - run: ./mcp-publisher login github-oidc
       - run: ./mcp-publisher publish
 

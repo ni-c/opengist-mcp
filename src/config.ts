@@ -1,37 +1,70 @@
 export interface Config {
-  /** Root URL of the Opengist instance without a trailing slash, e.g. `https://gist.example.com` */
-  url: string;
-  /** API base, i.e. `url` + `/api` */
-  baseUrl: string;
-  token: string;
+  /**
+   * Root URL of the Opengist instance without a trailing slash, e.g.
+   * `https://gist.example.com`. May be undefined together with the token: the
+   * server still starts and lists its tools, every API call then fails with
+   * {@link missingConfigMessage}.
+   */
+  url: string | undefined;
+  /** API base, i.e. `url` + `/api`. Undefined whenever `url` is. */
+  baseUrl: string | undefined;
+  token: string | undefined;
   /** When true, no write tools are registered at all. */
   readOnly: boolean;
   insecureTls: boolean;
 }
 
+/** Shown when the configuration is incomplete — at startup and on every API call. */
+export function missingConfigMessage(missing: string[]): string {
+  return (
+    `missing required environment variable(s): ${missing.join(', ')}\n` +
+    'Required: OPENGIST_URL (e.g. https://gist.example.com), OPENGIST_TOKEN\n' +
+    'Create a token in the Opengist web UI under Settings → Access Tokens with the\n' +
+    'scopes gist:read, gist:write, user:read (and user:write to like/unlike gists).\n' +
+    'Optional: OPENGIST_READ_ONLY=true to register only read tools,\n' +
+    '          OPENGIST_INSECURE_TLS=true to accept self-signed certificates'
+  );
+}
+
+/** Names of the required environment variables that are unset in `config`. */
+export function missingConfigKeys(config: Config): string[] {
+  return [
+    !config.url && 'OPENGIST_URL',
+    !config.token && 'OPENGIST_TOKEN',
+  ].filter((v): v is string => Boolean(v));
+}
+
 /**
- * Reads the configuration from environment variables and exits the process
- * with a helpful message if a required variable is missing or invalid.
+ * Reads the configuration from environment variables.
+ *
+ * Missing credentials are only a warning, not a fatal error: the server must be
+ * able to complete the MCP handshake and answer `tools/list` without them, so
+ * registries and sandbox inspectors can introspect it. A malformed URL still
+ * exits — that one could send the token to the wrong host.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const rawUrl = env.OPENGIST_URL;
   const token = env.OPENGIST_TOKEN;
+  const readOnly = env.OPENGIST_READ_ONLY === 'true';
+  const insecureTls = env.OPENGIST_INSECURE_TLS === 'true';
 
   const missing = [
     !rawUrl && 'OPENGIST_URL',
     !token && 'OPENGIST_TOKEN',
   ].filter((v): v is string => Boolean(v));
 
-  if (missing.length > 0 || !rawUrl || !token) {
-    console.error(
-      `opengist-mcp: missing required environment variable(s): ${missing.join(', ')}\n` +
-        'Required: OPENGIST_URL (e.g. https://gist.example.com), OPENGIST_TOKEN\n' +
-        'Create a token in the Opengist web UI under Settings → Access Tokens with the\n' +
-        'scopes gist:read, gist:write, user:read (and user:write to like/unlike gists).\n' +
-        'Optional: OPENGIST_READ_ONLY=true to register only read tools,\n' +
-        '          OPENGIST_INSECURE_TLS=true to accept self-signed certificates'
-    );
-    process.exit(1);
+  if (missing.length > 0) {
+    console.error(`opengist-mcp: ${missingConfigMessage(missing)}`);
+  }
+
+  if (!rawUrl) {
+    return {
+      url: undefined,
+      baseUrl: undefined,
+      token,
+      readOnly,
+      insecureTls,
+    };
   }
 
   let parsed: URL;
@@ -61,7 +94,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         'the access token and all gist contents will be sent unencrypted. Use https:// instead.'
     );
   }
-  if (!token.startsWith('og_')) {
+  if (token !== undefined && !token.startsWith('og_')) {
     console.error(
       'opengist-mcp: WARNING: OPENGIST_TOKEN does not start with "og_" — Opengist ' +
         'Personal Access Tokens do. Check that this is an access token and not a password.'
@@ -76,8 +109,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     url,
     baseUrl: `${url}/api`,
     token,
-    readOnly: env.OPENGIST_READ_ONLY === 'true',
-    insecureTls: env.OPENGIST_INSECURE_TLS === 'true',
+    readOnly,
+    insecureTls,
   };
 
   // Don't keep the token in the environment for the process lifetime

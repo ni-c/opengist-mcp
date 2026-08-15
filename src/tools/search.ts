@@ -11,7 +11,12 @@ import {
   visibility,
   withQuery,
 } from '../schema.js';
-import { shapeGistSummary, type RawGist } from '../shape.js';
+import {
+  hasUntrustedMetadata,
+  shapeGistSummary,
+  UNTRUSTED_METADATA_NOTE,
+  type RawGist,
+} from '../shape.js';
 
 import { listPath } from './gists.js';
 
@@ -116,6 +121,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
         let scannedGists = 0;
         let total: number | null = null;
         let stopped: string | null = null;
+        let matchedUntrustedMetadata = false;
         let nextPage: number | null = 1;
 
         while (nextPage !== null) {
@@ -163,6 +169,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
               return terms.every((term) => value.includes(term));
             });
             if (matchedOn.length === 0) continue;
+            if (hasUntrustedMetadata(gist)) matchedUntrustedMetadata = true;
             matches.push({ ...shapeGistSummary(gist), matchedOn });
             if (matches.length >= limit) break;
           }
@@ -196,6 +203,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
         notes.push(
           'Opengist has no search API — this was a client-side scan of the list endpoints, and file contents were not searched.'
         );
+        if (matchedUntrustedMetadata) notes.push(UNTRUSTED_METADATA_NOTE);
 
         return jsonResult({
           query,

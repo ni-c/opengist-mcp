@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A `Dockerfile` and `.dockerignore`. The image is digest-pinned, runs as the
+  unprivileged `node` user and carries the MCP Registry ownership label.
+
+### Changed
+
+- The server now starts **without** `OPENGIST_URL`/`OPENGIST_TOKEN`: it completes the
+  MCP handshake and lists its tools, and only a tool call fails with the setup
+  instructions. Registries and sandbox inspectors start the server without secrets
+  and could not enumerate the tools before. An invalid URL still exits, since that
+  one could send the token to the wrong host.
+- `get_user` returns an allowlisted set of fields instead of the raw API object, so
+  fields Opengist may add later cannot appear in the model context on their own. A
+  response that is not a user object is reported as an error naming the likely cause
+  instead of being passed through.
+
+### Security
+
+- The confirmation token of `update_gist` is now bound to the **entire** effect of the
+  call, not just the new visibility. A confirmation obtained for "make this public"
+  could previously be replayed with additional `fileOps`, `title` or `description`
+  attached, so the user approved disclosure and silently got content changes as well.
+  The refusal now also names the other changes the same call would make.
+- `delete_gist_files` no longer echoes the filenames it is about to delete into the
+  confirmation message, and the "unknown filename" error no longer echoes the
+  requested or the existing filenames. Both are attacker-influenceable text in a
+  message that a model reads — the rule the other confirmations already followed.
+- `update_gist` refuses empty file content. The API deletes an entry that carries
+  neither content nor filename, Opengist drops contentless files on create, and it is
+  undocumented whether `""` counts as absent on update — so an empty write is refused
+  rather than risking a deletion that bypasses the confirmation gate. The payload
+  invariant rejects it a second time, independently of the input schema.
+- Gist titles, descriptions and topics are now tagged as untrusted input in
+  `list_gists`, `list_gist_forks`, `search_gists` and the gist detail. Only file
+  contents carried that note before, while `list_gists` with `scope: "public"` returns
+  the metadata of every gist on the instance — usually the first call of a session.
+- The release workflow installs `mcp-publisher` from a pinned version verified against
+  a SHA-256 checksum instead of `releases/latest`, and runs `npm ci --ignore-scripts`
+  in the job that holds the npm Trusted Publishing credential.
+
 ## [0.1.0] - 2026-08-11
 
 ### Added

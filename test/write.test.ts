@@ -433,7 +433,13 @@ describe('delete_gist_files', () => {
       arguments: { gistId: 'abc123', filenames: ['nope.txt'] },
     })) as CallToolResult;
     expect(result.isError).toBe(true);
-    expect(resultText(result)).toContain('no file');
+    const text = resultText(result);
+    expect(text).toContain('do not exist');
+    expect(text).toContain('get_gist');
+    // Neither the requested nor the existing filenames are echoed back: both
+    // are attacker-influenceable text and this is read by a model.
+    expect(text).not.toContain('nope.txt');
+    expect(text).not.toContain('README.md');
     expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
   });
 

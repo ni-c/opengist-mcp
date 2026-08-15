@@ -152,17 +152,23 @@ describe('oversized results', () => {
 });
 
 describe('api response handling', () => {
-  it('passes a non-JSON body through as text', async () => {
+  // get_user allowlists the fields it returns, so a body that is not a user
+  // object is reported rather than passed through — "{}" would hide the cause,
+  // and echoing arbitrary text would defeat the allowlist.
+  it('reports a non-JSON body instead of passing it through', async () => {
     stubFetch(() => textResponse('plain text body'));
     const client = await connectClient();
     const result = (await client.callTool({
       name: 'get_user',
       arguments: {},
     })) as CallToolResult;
-    expect(resultJson(result).user).toBe('plain text body');
+    expect(result.isError).toBe(true);
+    const text = resultText(result);
+    expect(text).toContain('instead of a user object');
+    expect(text).not.toContain('plain text body');
   });
 
-  it('tolerates a broken JSON body', async () => {
+  it('reports a broken JSON body', async () => {
     stubFetch(
       () =>
         new Response('{not json', {
@@ -175,17 +181,19 @@ describe('api response handling', () => {
       name: 'get_user',
       arguments: {},
     })) as CallToolResult;
-    expect(resultJson(result).user).toBe('{not json');
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain('instead of a user object');
   });
 
-  it('treats an empty body as no data', async () => {
+  it('reports an empty body', async () => {
     stubFetch(() => new Response('', { status: 200 }));
     const client = await connectClient();
     const result = (await client.callTool({
       name: 'get_user',
       arguments: {},
     })) as CallToolResult;
-    expect(resultJson(result).user).toBeNull();
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain('an empty body');
   });
 
   it('explains a 409 conflict', async () => {

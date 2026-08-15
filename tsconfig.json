@@ -10,6 +10,9 @@
     "exactOptionalPropertyTypes": true,
     "declaration": true,
     "sourceMap": true,
+    // TypeScript 6 no longer pulls in @types packages automatically; without
+    // this the build stops finding `process` and the node built-ins.
+    "types": ["node"],
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true

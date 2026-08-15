@@ -21,6 +21,13 @@ updates:
           - minor
           - patch
 
+  # The Dockerfile pins its base image by digest, which nothing would ever
+  # refresh without this entry.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

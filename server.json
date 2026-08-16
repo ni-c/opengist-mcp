@@ -8,12 +8,12 @@
     "url": "https://github.com/ni-c/opengist-mcp",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "opengist-mcp",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "transport": {
         "type": "stdio"
       },
@@ -47,7 +47,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/ni-c/opengist-mcp:0.2.0",
+      "identifier": "ghcr.io/ni-c/opengist-mcp:0.2.1",
       "transport": {
         "type": "stdio"
       },

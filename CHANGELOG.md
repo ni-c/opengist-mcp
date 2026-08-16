@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-08-16
+
+### Fixed
+
+- The documented value for the `scope` parameter of `list_gists` and `search_gists`
+  was wrong: it is `mine`, not `own`. The docs, the getting-started smoke test and the
+  demo tape were written from the tool descriptions instead of the schema, and a live
+  call against a real instance rejected the value they showed.
+
+### Changed
+
+- `homepage` points at [opengist-mcp.ni-c.de](https://opengist-mcp.ni-c.de) rather
+  than the README anchor, so the npm page links to the documentation.
+- Published from CI through npm Trusted Publishing, so this release carries build
+  provenance. 0.2.0 was published by hand and does not.
+
 ## [0.2.0] - 2026-08-16
 
 ### Added
@@ -128,6 +144,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The access token is removed from `process.env` after startup, and a URL containing
   credentials is rejected.
 
-[unreleased]: https://github.com/ni-c/opengist-mcp/compare/v0.2.0...HEAD
+[unreleased]: https://github.com/ni-c/opengist-mcp/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/ni-c/opengist-mcp/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ni-c/opengist-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ni-c/opengist-mcp/releases/tag/v0.1.0

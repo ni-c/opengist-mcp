@@ -61,8 +61,32 @@ jobs:
       - name: Sync version from package.json into server.json
         run: |
           version="$(node -p "require('./package.json').version")"
-          jq --arg v "$version" '.version = $v | .packages[0].version = $v' \
+          # The registry rejects a 'version' field on OCI packages — their version
+          # lives in the identifier tag instead. Touch BOTH package entries.
+          jq --arg v "$version" \
+            '.version = $v
+             | (.packages[] | select(.registryType != "oci") | .version) = $v
+             | (.packages[] | select(.registryType == "oci")) |= (del(.version) | .identifier |= sub(":[^:]*$"; ":" + $v))' \
             server.json > server.tmp && mv server.tmp server.json
+          jq -r '.packages[] | "\(.registryType) \(.identifier) \(.version // "-")"' server.json
+      # ci.yml pushes the image in a parallel run on the same tag, so the
+      # registry's ownership check would race it. Wait until GHCR serves the tag.
+      - name: Wait for the GHCR image tag
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          token="$(curl -fsS 'https://ghcr.io/token?scope=repository:ni-c/opengist-mcp:pull&service=ghcr.io' | jq -r .token)"
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null -H "Authorization: Bearer $token" \
+                -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+                "https://ghcr.io/v2/ni-c/opengist-mcp/manifests/$version"; then
+              echo "ghcr.io/ni-c/opengist-mcp:$version is available"
+              exit 0
+            fi
+            echo "waiting for ghcr.io/ni-c/opengist-mcp:$version ($i/60)"
+            sleep 30
+          done
+          echo "Image tag $version never appeared on GHCR — is ci.yml's publish job green?" >&2
+          exit 1
       - name: Install mcp-publisher
         # Pinned to a version with a checksum instead of following
         # releases/latest: this job holds the registry OIDC credential, and

@@ -1,7 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.ni-c/opengist-mcp",
+  "title": "Opengist",
   "description": "Read, create, update and delete gists on a self-hosted Opengist instance",
+  "websiteUrl": "https://opengist-mcp.ni-c.de",
   "repository": {
     "url": "https://github.com/ni-c/opengist-mcp",
     "source": "github"
@@ -12,6 +14,40 @@
       "registryType": "npm",
       "identifier": "opengist-mcp",
       "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "OPENGIST_URL",
+          "description": "Base URL of the Opengist instance, e.g. https://gist.example.com",
+          "isRequired": true,
+          "format": "string"
+        },
+        {
+          "name": "OPENGIST_TOKEN",
+          "description": "Opengist Personal Access Token (starts with og_), created under Settings -> Access Tokens",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "OPENGIST_READ_ONLY",
+          "description": "Set to true to not register any write tools (create, update, delete, fork, like)",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "OPENGIST_INSECURE_TLS",
+          "description": "Set to true to accept self-signed TLS certificates (scoped to the Opengist connection)",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    },
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/ni-c/opengist-mcp:0.2.0",
       "transport": {
         "type": "stdio"
       },

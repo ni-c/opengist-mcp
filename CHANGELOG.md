@@ -5,12 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-08-16
 
 ### Added
 
 - A `Dockerfile` and `.dockerignore`. The image is digest-pinned, runs as the
   unprivileged `node` user under `tini` and carries the MCP Registry ownership label.
+  Multi-arch images (amd64, arm64) with an SBOM and build provenance are published to
+  `ghcr.io/ni-c/opengist-mcp`.
+- A documentation site at [opengist-mcp.ni-c.de](https://opengist-mcp.ni-c.de) with a
+  guide, the full tool reference and the security notes.
+- CI now runs CodeQL and a Trivy scan of the container image on both architectures in
+  addition to the test matrix and `npm audit`. The runtime image ships without npm and
+  corepack, whose vendored dependency trees were the only source of HIGH/CRITICAL
+  findings on it.
 
 ### Changed
 
@@ -120,5 +128,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The access token is removed from `process.env` after startup, and a URL containing
   credentials is rejected.
 
-[Unreleased]: https://github.com/ni-c/opengist-mcp/compare/v0.1.0...HEAD
+[unreleased]: https://github.com/ni-c/opengist-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ni-c/opengist-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ni-c/opengist-mcp/releases/tag/v0.1.0

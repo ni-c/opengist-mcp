@@ -33,5 +33,5 @@ Type "npx -y @modelcontextprotocol/inspector --cli node dist/index.js --method t
 Sleep 6s
 Type "# 3. read-only: list my gists" Enter
 Sleep 1s
-Type "npx -y @modelcontextprotocol/inspector --cli node dist/index.js --method tools/call --tool-name list_gists --tool-arg scope=own | head -30" Enter
+Type "npx -y @modelcontextprotocol/inspector --cli node dist/index.js --method tools/call --tool-name list_gists --tool-arg scope=mine | head -30" Enter
 Sleep 8s

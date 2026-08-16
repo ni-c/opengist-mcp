@@ -53,7 +53,7 @@ Three likely reasons:
    owners. Searching inside files would mean downloading every file of every gist.
 2. **It was cut short.** The result reports `scanned` and marks incomplete results
    explicitly — raise `maxPages` or narrow the `scope`.
-3. **Wrong scope.** It defaults to `own`. Pass `scope: "public"` to search the whole
+3. **Wrong scope.** It defaults to `mine`. Pass `scope: "public"` to search the whole
    instance.
 
 ## The links in results point at localhost

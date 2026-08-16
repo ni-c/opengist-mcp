@@ -20,7 +20,7 @@
   "bugs": {
     "url": "https://github.com/ni-c/opengist-mcp/issues"
   },
-  "homepage": "https://github.com/ni-c/opengist-mcp#readme",
+  "homepage": "https://opengist-mcp.ni-c.de",
   "type": "module",
   "bin": {
     "opengist-mcp": "dist/index.js"

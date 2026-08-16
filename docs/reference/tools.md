@@ -13,7 +13,7 @@ Lists gist summaries — no file contents. Use `get_gist` for those.
 
 | Parameter  | Type   | Default | Notes                                                     |
 | ---------- | ------ | ------- | --------------------------------------------------------- |
-| `scope`    | enum   | `own`   | `own`, `public`, `liked`, `forked`                        |
+| `scope`    | enum   | `mine`  | `mine`, `public`, `liked`, `forked`                       |
 | `username` | string | —       | Narrows the scope to that user instead of the token owner |
 | `since`    | string | —       | RFC 3339 timestamp; only gists updated after it           |
 | `page`     | number | `1`     |                                                           |
@@ -80,7 +80,7 @@ and whether it was cut short.
 | ------------ | -------- | --------------------------------- | ---------------------------------- |
 | `query`      | string   | required                          |                                    |
 | `in`         | string[] | title, description, topics, owner | Which fields to match              |
-| `scope`      | enum     | `own`                             | Same scopes as `list_gists`        |
+| `scope`      | enum     | `mine`                            | Same scopes as `list_gists`        |
 | `username`   | string   | —                                 |                                    |
 | `visibility` | enum     | —                                 | Filter the results                 |
 | `archived`   | boolean  | —                                 |                                    |

@@ -39,7 +39,7 @@ With credentials set, a read-only call against the real instance:
 ```sh
 npx -y @modelcontextprotocol/inspector --cli \
   npx -y opengist-mcp \
-  --method tools/call --tool-name list_gists --tool-arg scope=own
+  --method tools/call --tool-name list_gists --tool-arg scope=mine
 ```
 
 If that returns your gists, the token and the URL are both right.

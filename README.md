@@ -4,11 +4,21 @@
 [![npm version](https://img.shields.io/npm/v/opengist-mcp.svg)](https://www.npmjs.com/package/opengist-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/opengist-mcp.svg)](https://www.npmjs.com/package/opengist-mcp)
 [![node](https://img.shields.io/node/v/opengist-mcp.svg)](https://www.npmjs.com/package/opengist-mcp)
+[![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fopengist--mcp-2496ed?logo=docker&logoColor=white)](https://github.com/ni-c/opengist-mcp/pkgs/container/opengist-mcp)
+[![docs](https://img.shields.io/badge/docs-opengist--mcp.ni--c.de-4f46e5)](https://opengist-mcp.ni-c.de)
 [![license](https://img.shields.io/npm/l/opengist-mcp.svg)](LICENSE)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Opengist](https://github.com/thomiceli/opengist), the self-hosted pastebin powered by Git.
 
 Lets MCP clients like Claude Code, Claude Desktop or Codex read, search, create, update and delete gists on your own Opengist instance: file contents and revisions, commit history, forks and likes, plus your user account.
+
+📖 **[Full documentation at opengist-mcp.ni-c.de](https://opengist-mcp.ni-c.de)**
+
+<!-- SYNC: docs/public/architecture.svg is the standalone copy embedded here and
+     on npm; docs/index.md holds the same diagram inline so it can follow the
+     site's theme toggle. Change both. -->
+
+![Architecture](https://opengist-mcp.ni-c.de/architecture.svg)
 
 > **Note:** this server talks to the Opengist REST API under `/api`, which is available in recent Opengist releases and enabled by default (`api.enabled`). A running instance serves its own OpenAPI spec at `GET /api/openapi.yaml` — compare it against your version if a tool behaves unexpectedly.
 
@@ -78,6 +88,18 @@ args = ["-y", "opengist-mcp"]
 env = { OPENGIST_URL = "https://gist.example.com", OPENGIST_TOKEN = "og_your_token" }
 ```
 
+### Docker
+
+```sh
+docker run --rm -i \
+  -e OPENGIST_URL=https://gist.example.com \
+  -e OPENGIST_TOKEN=og_your_token \
+  ghcr.io/ni-c/opengist-mcp:latest
+```
+
+`-i` is required — the transport is stdio. Do not add `-t`; a TTY corrupts the
+protocol stream.
+
 ### From source
 
 ```sh
@@ -144,7 +166,14 @@ git tag -a v0.1.0 -m "v0.1.0"
 git push origin main v0.1.0
 ```
 
-The release workflow verifies that the tag matches the package version, publishes to npm via OIDC trusted publishing (no long-lived token), registers the release in the MCP registry and creates a GitHub release from the changelog section.
+The release workflow verifies that the tag matches the package version, publishes to npm via OIDC trusted publishing (no long-lived token), waits for the container image to appear on GHCR, registers the release in the MCP registry and creates a GitHub release from the changelog section.
+
+If the registry step fails, fix it on `main` and dispatch `mcp-registry.yml` — never re-run the tagged job, which checks out the immutable tag.
+
+## Documentation
+
+The full guide, tool reference and security notes live at
+**[opengist-mcp.ni-c.de](https://opengist-mcp.ni-c.de)** (source in [`docs/`](docs/)).
 
 ## License
 

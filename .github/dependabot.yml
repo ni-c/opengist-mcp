@@ -21,6 +21,14 @@ updates:
           - minor
           - patch
 
+  # The docs site has its own manifest and lockfile on purpose — the VitePress
+  # toolchain must never enter the root one, which is installed in the Docker
+  # build and in every test-matrix job.
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+
   # The Dockerfile pins its base image by digest, which nothing would ever
   # refresh without this entry.
   - package-ecosystem: docker

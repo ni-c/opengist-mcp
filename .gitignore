@@ -4,3 +4,4 @@ coverage/
 *.log
 .env
 .smoke.mjs
+.vitepress/cache/

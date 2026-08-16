@@ -66,7 +66,9 @@ export function registerGistWriteTools(
       title: 'Create a gist',
       description:
         'Create a new gist from one or more files. Topics cannot be set through the API. ' +
-        'Expiry can only be set here, never changed afterwards.',
+        'Expiry can only be set here, never changed afterwards. ' +
+        'visibility "public" or "unlisted" publishes the content and therefore needs a confirmToken: ' +
+        'the first call is refused and returns one. Use "private" unless the user asked for otherwise.',
       inputSchema: {
         files: z
           .array(
@@ -215,7 +217,8 @@ export function registerGistWriteTools(
         'Change the metadata of a gist and/or write and rename files. ' +
         'Files you do not list are left untouched — never list a file just to preserve it. ' +
         'This tool can never delete a file; use delete_gist_files for that. ' +
-        'Widening the visibility (private → unlisted/public, unlisted → public) discloses the gist and therefore needs a confirmToken.',
+        'Widening the visibility (private → unlisted/public, unlisted → public) discloses the gist and therefore needs a confirmToken, ' +
+        'as does writing files into a gist that is already public or unlisted. Narrowing the visibility does not.',
       inputSchema: {
         gistId,
         title: z.string().max(250).optional(),

@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 300" width="880" height="300" role="img" aria-labelledby="t d">
+  <title id="t">How opengist-mcp sits between an MCP client and an Opengist instance</title>
+  <desc id="d">The MCP client speaks stdio to opengist-mcp, which calls the Opengist REST API over HTTPS with a bearer token. Every response passes through a shaping layer that bounds it and marks it as untrusted, and destructive calls pass through a confirmation gate.</desc>
+
+  <!-- SYNC: this file and the inline SVG in docs/index.md show the same diagram.
+       This one carries a prefers-color-scheme media query because the README and
+       npm embed it as an image and cannot supply CSS variables. Change both. -->
+  <style>
+    .bg { fill: #ffffff; }
+    .node { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.25; }
+    .node-accent { fill: rgba(99,102,241,0.12); stroke: #4f46e5; stroke-width: 1.5; }
+    .edge { stroke: #cbd5e1; stroke-width: 1.5; fill: none; }
+    .edge-accent { stroke: #4f46e5; stroke-width: 1.75; fill: none; }
+    .edge-dashed { stroke-dasharray: 5 4; }
+    text { fill: #1e293b; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 13px; }
+    .label-mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 12px; }
+    .label-muted { fill: #64748b; font-size: 11.5px; }
+    .label-title { font-size: 13.5px; font-weight: 600; }
+    marker path { fill: #cbd5e1; }
+    marker.accent path { fill: #4f46e5; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1b1b1f; }
+      .node { fill: rgba(148,163,184,0.08); stroke: #64748b; }
+      .node-accent { fill: rgba(129,140,248,0.14); stroke: #a5b4fc; }
+      .edge { stroke: #475569; }
+      .edge-accent { stroke: #a5b4fc; }
+      text { fill: #e2e8f0; }
+      .label-muted { fill: #94a3b8; }
+      marker path { fill: #475569; }
+      marker.accent path { fill: #a5b4fc; }
+    }
+  </style>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" />
+    </marker>
+    <marker id="arrow-accent" class="accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" />
+    </marker>
+  </defs>
+
+  <rect class="bg" width="880" height="300" />
+
+  <rect class="node" x="16" y="96" width="150" height="72" rx="10" />
+  <text class="label-title" x="91" y="126" text-anchor="middle">MCP client</text>
+  <text class="label-muted" x="91" y="146" text-anchor="middle">Claude, Codex, …</text>
+
+  <path class="edge edge-accent" d="M 172 132 L 240 132" marker-end="url(#arrow-accent)" />
+  <text class="label-mono" x="206" y="120" text-anchor="middle">stdio</text>
+
+  <rect class="node-accent" x="246" y="40" width="330" height="220" rx="12" />
+  <text class="label-title" x="411" y="68" text-anchor="middle">opengist-mcp</text>
+
+  <rect class="node" x="270" y="86" width="128" height="56" rx="8" />
+  <text x="334" y="110" text-anchor="middle">tools</text>
+  <text class="label-muted" x="334" y="128" text-anchor="middle">14 registered</text>
+
+  <rect class="node" x="424" y="86" width="128" height="56" rx="8" />
+  <text x="488" y="110" text-anchor="middle">confirmation</text>
+  <text class="label-muted" x="488" y="128" text-anchor="middle">single-use tokens</text>
+
+  <rect class="node" x="270" y="164" width="282" height="72" rx="8" />
+  <text x="411" y="190" text-anchor="middle">shaping</text>
+  <text class="label-muted" x="411" y="210" text-anchor="middle">allowlist · size budgets · untrusted markers</text>
+
+  <path class="edge edge-accent" d="M 582 132 L 664 132" marker-end="url(#arrow-accent)" />
+  <text class="label-mono" x="623" y="120" text-anchor="middle">HTTPS</text>
+  <text class="label-muted" x="623" y="150" text-anchor="middle">Bearer og_…</text>
+
+  <rect class="node" x="670" y="96" width="194" height="72" rx="10" />
+  <text class="label-title" x="767" y="126" text-anchor="middle">Opengist</text>
+  <text class="label-muted" x="767" y="146" text-anchor="middle">/api · your instance</text>
+
+  <path class="edge edge-dashed" d="M 767 174 L 767 264 L 91 264 L 91 174" marker-end="url(#arrow)" />
+  <text class="label-muted" x="429" y="282" text-anchor="middle">every response is shaped, bounded and marked before it reaches the model</text>
+</svg>

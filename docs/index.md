@@ -1,0 +1,97 @@
+---
+layout: home
+hero:
+  name: 'opengist-mcp'
+  text: 'Your gists, in the model context'
+  tagline: 'An MCP server for Opengist, the self-hosted pastebin powered by Git — read, search, create, update and delete gists on your own instance.'
+  actions:
+    - theme: brand
+      text: Get started
+      link: /guide/getting-started
+    - theme: alt
+      text: Tools reference
+      link: /reference/tools
+    - theme: alt
+      text: GitHub
+      link: https://github.com/ni-c/opengist-mcp
+features:
+  - title: Fourteen tools, one API surface
+    details: Reading, searching, writing, forking and liking gists — including revisions, commit history and raw file access — derived from the Opengist REST API and verified against a live instance.
+  - title: Bounded by construction
+    details: File contents are capped per file and against an overall budget, binary files are never dumped as text, and every truncation names the call that fetches the rest.
+  - title: Safe by default
+    details: Deleting and publishing need a server-issued confirmation token bound to the exact target and content, upstream text is marked untrusted, and read-only mode simply does not register the write tools.
+---
+
+<!-- SYNC: this inline SVG and public/architecture.svg show the same diagram.
+     The inline copy uses CSS variables so it follows the theme toggle; the
+     standalone file uses a prefers-color-scheme media query because README and
+     npm embed it as an image. Change both. -->
+
+<figure class="diagram">
+<svg viewBox="0 0 880 300" role="img" aria-labelledby="arch-title arch-desc">
+  <title id="arch-title">How opengist-mcp sits between an MCP client and an Opengist instance</title>
+  <desc id="arch-desc">The MCP client speaks stdio to opengist-mcp, which calls the Opengist REST API over HTTPS with a bearer token. Every response passes through a shaping layer that bounds it and marks it as untrusted, and destructive calls pass through a confirmation gate.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" />
+    </marker>
+    <marker id="arrow-accent" class="accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" />
+    </marker>
+  </defs>
+
+  <!-- MCP client -->
+  <rect class="node" x="16" y="96" width="150" height="72" rx="10" />
+  <text class="label-title" x="91" y="126" text-anchor="middle">MCP client</text>
+  <text class="label-muted" x="91" y="146" text-anchor="middle">Claude, Codex, …</text>
+
+  <!-- stdio -->
+  <path class="edge edge-accent" d="M 172 132 L 240 132" marker-end="url(#arrow-accent)" />
+  <text class="label-mono" x="206" y="120" text-anchor="middle">stdio</text>
+
+  <!-- server box -->
+  <rect class="node-accent" x="246" y="40" width="330" height="220" rx="12" />
+  <text class="label-title" x="411" y="68" text-anchor="middle">opengist-mcp</text>
+
+  <rect class="node" x="270" y="86" width="128" height="56" rx="8" />
+  <text x="334" y="110" text-anchor="middle">tools</text>
+  <text class="label-muted" x="334" y="128" text-anchor="middle">14 registered</text>
+
+  <rect class="node" x="424" y="86" width="128" height="56" rx="8" />
+  <text x="488" y="110" text-anchor="middle">confirmation</text>
+  <text class="label-muted" x="488" y="128" text-anchor="middle">single-use tokens</text>
+
+  <rect class="node" x="270" y="164" width="282" height="72" rx="8" />
+  <text x="411" y="190" text-anchor="middle">shaping</text>
+  <text class="label-muted" x="411" y="210" text-anchor="middle">allowlist · size budgets · untrusted markers</text>
+
+  <!-- https -->
+  <path class="edge edge-accent" d="M 582 132 L 664 132" marker-end="url(#arrow-accent)" />
+  <text class="label-mono" x="623" y="120" text-anchor="middle">HTTPS</text>
+  <text class="label-muted" x="623" y="150" text-anchor="middle">Bearer og_…</text>
+
+  <!-- opengist -->
+  <rect class="node" x="670" y="96" width="194" height="72" rx="10" />
+  <text class="label-title" x="767" y="126" text-anchor="middle">Opengist</text>
+  <text class="label-muted" x="767" y="146" text-anchor="middle">/api · your instance</text>
+
+  <!-- return path -->
+  <path class="edge edge-dashed" d="M 767 174 L 767 264 L 91 264 L 91 174" marker-end="url(#arrow)" />
+  <text class="label-muted" x="429" y="282" text-anchor="middle">every response is shaped, bounded and marked before it reaches the model</text>
+</svg>
+<figcaption>The token never leaves this process, and nothing the API returns reaches the model unshaped.</figcaption>
+</figure>
+
+## Install
+
+```sh
+claude mcp add opengist -s user \
+  -e OPENGIST_URL=https://gist.example.com \
+  -e OPENGIST_TOKEN=og_your_token \
+  -- npx -y opengist-mcp
+```
+
+Other clients — Claude Desktop, Codex, the MCP Inspector, Docker — are covered under
+[Connecting clients](/guide/clients).

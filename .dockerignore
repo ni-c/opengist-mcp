@@ -6,3 +6,8 @@ test
 .github
 .env
 *.log
+# Neither exists yet, which is exactly why they are listed: the first time a
+# docs site or a scratch directory lands in the repo it would otherwise enter
+# the build context silently.
+docs
+data

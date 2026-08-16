@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 const TOKEN_TTL_MS = 5 * 60 * 1000;
 /** Bounds the map so a loop of refused calls cannot grow it without limit. */
@@ -42,7 +42,8 @@ export class ConfirmationStore {
   consume(resource: string, token: string | undefined): boolean {
     const entry = this.pending.get(resource);
     if (entry === undefined || token === undefined) return false;
-    if (token !== entry.token || Date.now() >= entry.expiresAt) return false;
+    if (Date.now() >= entry.expiresAt) return false;
+    if (!constantTimeEquals(token, entry.token)) return false;
     this.pending.delete(resource);
     return true;
   }
@@ -51,4 +52,19 @@ export class ConfirmationStore {
   get ttlMinutes(): number {
     return Math.round(this.ttlMs / 60_000);
   }
+}
+
+/**
+ * Compares two tokens without leaking their contents through timing. The
+ * token is 128 bits of randomness and the only oracle is a model-driven tool
+ * call, so this is hardening rather than a fix — but a comparison that stops
+ * at the first differing byte has no business guarding a confirmation.
+ */
+function constantTimeEquals(a: string, b: string): boolean {
+  const left = Buffer.from(a, 'utf8');
+  const right = Buffer.from(b, 'utf8');
+  // timingSafeEqual throws on a length mismatch; the length of a token is not
+  // a secret, so comparing it up front is fine.
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }

@@ -106,7 +106,7 @@ npm run build
 
 | Tool                | Description                                                                                          |
 | ------------------- | ---------------------------------------------------------------------------------------------------- |
-| `create_gist`       | Create a gist from a list of files. `visibility` is required, never implicit                         |
+| `create_gist`       | Create a gist from a list of files. `visibility` is required; public/unlisted needs a confirmation   |
 | `update_gist`       | Change title/description/visibility and write or rename files. Cannot delete files                   |
 | `delete_gist_files` | Delete files from a gist — needs a confirmation token bound to exactly those filenames               |
 | `delete_gist`       | Delete a gist permanently — needs a confirmation token                                               |
@@ -116,6 +116,8 @@ npm run build
 ### Safety
 
 - **Irreversible actions need a server-generated token.** `delete_gist`, `delete_gist_files` and widening a gist's visibility refuse the first call and return a random, single-use token that expires after five minutes. A plain `confirm: true` flag could be set by the model on its own, or be talked into it by text inside a gist; a token that only ever appeared in a previous tool result cannot. The token for `delete_gist_files` is bound to the exact set of filenames, so a confirmation for one file cannot be replayed to delete another.
+- **Publishing content needs the same token.** Creating a `public` or `unlisted` gist, and writing files into a gist that already is one, are disclosure events: whatever the model has in its context becomes readable by others and cannot be withdrawn from anyone who already saw it. Both refuse the first call. The token is bound to the exact content, so a confirmation for one file cannot be replayed with a second one attached. A call that makes the gist private in the same breath is not a disclosure and needs no token.
+- **Confirmations are checked after validation.** A call that could not succeed anyway is reported as the input error it is, rather than first costing a confirmation round-trip.
 - **Confirmation prompts never quote gist text.** Titles, descriptions, topics and filenames are user-supplied and could carry instructions aimed at manufacturing a confirmation, so refusals show only server-side metadata (visibility, file count, dates).
 - **`update_gist` cannot delete a file.** The Opengist API deletes a file when its entry is `null` _or_ carries neither `content` nor `filename` — exactly the shape a sloppily built object has. This server therefore never exposes the raw file map; it accepts explicit `write`/`rename` operations and asserts before sending that no entry could be read as a deletion. Files you do not mention are left untouched.
 - **Typos cannot silently duplicate a file.** A write to a filename that does not exist is refused unless `allowCreate: true` is passed, and the refusal names a case-insensitive near match (`readme.md` vs `README.md`).

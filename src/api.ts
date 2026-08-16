@@ -12,6 +12,15 @@ import {
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
+/**
+ * Ceiling on a single response body. The per-tool budgets in `shape.ts` and
+ * `result.ts` all trim data that is already resident as a string, so without a
+ * cap here a hostile or misconfigured instance could exhaust memory before any
+ * of them is consulted — `get_gist_file` streams whatever the raw endpoint
+ * returns. 8 MB is far above any legitimate gist and far below trouble.
+ */
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
+
 /** Just enough of the Headers interface for what the pagination parser needs. */
 export interface ResponseHeaders {
   get(name: string): string | null;
@@ -98,14 +107,18 @@ export class OpengistApi {
 
     const url = `${this.baseUrl}${path}`;
     // The insecure dispatcher requires undici's own fetch; the default path
-    // uses the (stubbable) global fetch.
-    const response = this.insecureDispatcher
+    // uses the (stubbable) global fetch. Only requests that actually go to the
+    // configured instance may use the relaxed dispatcher — `redirect: 'error'`
+    // already forbids cross-origin hops, this makes it independent of that.
+    const useInsecure =
+      this.insecureDispatcher !== undefined && this.isConfiguredOrigin(url);
+    const response = useInsecure
       ? await undiciFetch(url, {
           ...init,
           dispatcher: this.insecureDispatcher,
         } as UndiciRequestInit)
       : await fetch(url, init);
-    const text = await response.text();
+    const text = await readBoundedBody(response, method, path);
 
     if (!response.ok) {
       throw new OpengistApiError(response.status, text, method, path);
@@ -173,4 +186,78 @@ export class OpengistApi {
   delete(path: string): Promise<ApiResponse> {
     return this.request('DELETE', path);
   }
+
+  private isConfiguredOrigin(url: string): boolean {
+    try {
+      return new URL(url).origin === new URL(this.baseUrl).origin;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/** Minimal shape of a response body we can read incrementally. */
+interface StreamingBody {
+  getReader(): {
+    read(): Promise<{ done: boolean; value?: Uint8Array }>;
+    cancel(): Promise<void>;
+  };
+}
+
+function hasStreamingBody(body: unknown): body is StreamingBody {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    typeof (body as StreamingBody).getReader === 'function'
+  );
+}
+
+/**
+ * Reads a response body, refusing anything past {@link MAX_BODY_BYTES}.
+ *
+ * A declared `content-length` is rejected before a single byte is read; a
+ * chunked response is aborted as soon as the accumulated size crosses the
+ * ceiling. Responses without a streamable body — which is what the test stubs
+ * of global `fetch` return — fall back to `text()` and are checked afterwards.
+ */
+async function readBoundedBody(
+  response: {
+    headers: ResponseHeaders;
+    body?: unknown;
+    text(): Promise<string>;
+  },
+  method: string,
+  path: string
+): Promise<string> {
+  const tooLarge = (): Error =>
+    new Error(
+      `Opengist API ${method} ${path} returned a response larger than ` +
+        `${MAX_BODY_BYTES} bytes and was refused.`
+    );
+
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw tooLarge();
+
+  const body = response.body;
+  if (!hasStreamingBody(body)) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > MAX_BODY_BYTES) throw tooLarge();
+    return text;
+  }
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value === undefined) continue;
+    total += value.byteLength;
+    if (total > MAX_BODY_BYTES) {
+      await reader.cancel();
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }

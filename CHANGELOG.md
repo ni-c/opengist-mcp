@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - A `Dockerfile` and `.dockerignore`. The image is digest-pinned, runs as the
-  unprivileged `node` user and carries the MCP Registry ownership label.
+  unprivileged `node` user under `tini` and carries the MCP Registry ownership label.
 
 ### Changed
 
@@ -26,6 +26,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Publishing content now needs a confirmation token.** `create_gist` with
+  `visibility: "public"` or `"unlisted"` refuses the first call and returns a
+  single-use token, the same gate that widening an existing gist's visibility already
+  had. Creating a public gist is the stronger of the two primitives — the content
+  comes straight out of the model's context rather than from something already stored
+  — and a required `visibility` field only prevents an _accidental_ public default,
+  not a directed one. `update_gist` gets the same gate when it writes files into a
+  gist that is already public or unlisted; a call that makes the gist private in the
+  same breath is not a disclosure and stays ungated.
+- `update_gist` validates its file operations **before** asking for a confirmation, so
+  a call that could never succeed no longer costs a confirmation round-trip and no
+  token is ever issued for one.
+- The access token is now removed from `process.env` before any early return, not
+  after the URL has been parsed. The credential-less start path is exactly the one
+  where a token is set and something else is wrong — a typo in the URL, a half-filled
+  config — and it used to leave the token readable in `/proc/<pid>/environ`.
+- Truncation and binary-content notes refer to a file by its index in the returned
+  `files` array instead of quoting its name. A filename is written by whoever created
+  the gist; interpolated into server-voice prose it could close the quoting and forge
+  what reads as operator guidance. The name is still available to the model as the
+  `filename` field of the entry, where it is data rather than prose.
+- The untrusted-metadata marker now also fires for the titles, descriptions and topics
+  of embedded forks and of the gist a gist was forked from — those are written by
+  _other_ users, so a gist with no metadata of its own could carry theirs through
+  unmarked. Commit author names get their own marker, and `change_status` is reduced
+  to its four documented keys instead of being passed through.
+- Responses are refused past 8 MB, by `content-length` where one is declared and while
+  reading otherwise. Every per-tool budget trims data that is already resident as a
+  string, so without this ceiling a hostile instance could exhaust memory before any
+  of them was consulted.
+- Confirmation tokens are compared in constant time, and the effect fingerprints they
+  are bound to use the full SHA-256 digest instead of its first 64 bits.
+- The insecure-TLS dispatcher is now selected only for requests whose origin matches
+  the configured instance, independent of the `redirect: 'error'` that already
+  prevented cross-origin hops.
 - The confirmation token of `update_gist` is now bound to the **entire** effect of the
   call, not just the new visibility. A confirmation obtained for "make this public"
   could previously be replayed with additional `fileOps`, `title` or `description`

@@ -31,6 +31,16 @@ const VISIBILITY_RANK: Record<string, number> = {
   public: 2,
 };
 
+/**
+ * Fingerprints the full effect of a call so a confirmation cannot be replayed
+ * for a different one. The digest never reaches the model, so there is no
+ * reason to shorten it — a truncated hash only buys an attacker a birthday
+ * bound on the very property this is meant to guarantee.
+ */
+function fingerprint(effect: unknown): string {
+  return createHash('sha256').update(JSON.stringify(effect)).digest('hex');
+}
+
 /** Loads a gist and refuses up front if it cannot be modified. */
 async function loadWritableGist(
   api: OpengistApi,
@@ -83,6 +93,12 @@ export function registerGistWriteTools(
           .optional()
           .describe('Title of the gist; defaults to the first filename'),
         description: z.string().max(1000).optional(),
+        confirmToken: z
+          .string()
+          .optional()
+          .describe(
+            'Confirmation token from a previous create_gist call with identical arguments. Only required when visibility is public or unlisted; omit on the first call.'
+          ),
         expire: z
           .enum(['never', '1hour', '12hours', '1day', '7days', '15days'])
           .optional()
@@ -98,7 +114,15 @@ export function registerGistWriteTools(
       },
       annotations: {},
     },
-    ({ files, visibility, title, description, expire, expiresAt }) =>
+    ({
+      files,
+      visibility,
+      title,
+      description,
+      expire,
+      expiresAt,
+      confirmToken,
+    }) =>
       run(async () => {
         if (expire !== undefined && expiresAt !== undefined) {
           throw new ToolInputError(
@@ -124,6 +148,38 @@ export function registerGistWriteTools(
           if (timestamp <= Date.now()) {
             throw new ToolInputError(
               'expiresAt is in the past; the gist would be deleted immediately.'
+            );
+          }
+        }
+
+        // Creating a public or unlisted gist is a disclosure event, exactly
+        // like widening the visibility of an existing one — and it is the
+        // stronger primitive of the two, because the content comes from the
+        // model's own context rather than from something already stored. A
+        // required `visibility` field prevents an accidental public default,
+        // not a directed one: text inside a gist read earlier in the session
+        // can ask for precisely this call. So it gets the same gate.
+        if (visibility !== 'private') {
+          const resource = `gist:create:${visibility}:${fingerprint({
+            files: files.map((file) => [file.filename, file.content]),
+            title: title ?? null,
+            description: description ?? null,
+            expire: expire ?? null,
+            expiresAt: expiresAt ?? null,
+          })}`;
+          if (!confirmations.consume(resource, confirmToken)) {
+            const token = confirmations.issue(resource);
+            const bytes = files.reduce(
+              (total, file) => total + Buffer.byteLength(file.content, 'utf8'),
+              0
+            );
+            // Only server-side counts are quoted. Filenames, title and
+            // description are caller-supplied text that would land in a
+            // confirmation prompt a model reads back.
+            return errorResult(
+              `Creating a ${visibility} gist publishes its content: ${visibility === 'public' ? 'it is listed on the instance and readable by anyone' : 'anyone with the URL can read it, and the URL may be shared onward'}. ` +
+                `This call would write ${files.length} file(s), ${bytes} byte(s) in total. Filenames, title and description are withheld here on purpose (they are supplied by the caller, not by the server) — check them in the arguments you are about to send. ` +
+                `Confirm with the user that this content may become world-readable, then call create_gist again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}" and otherwise identical arguments. Use visibility "private" if in doubt.`
             );
           }
         }
@@ -236,40 +292,49 @@ export function registerGistWriteTools(
 
         const gist = await loadWritableGist(api, id);
         const current = gist.visibility ?? 'private';
-
-        if (
+        // What the gist will be visible as once this call is done.
+        const effective = newVisibility ?? current;
+        const widens =
           newVisibility !== undefined &&
           (VISIBILITY_RANK[newVisibility] ?? 0) >
-            (VISIBILITY_RANK[current] ?? 0)
-        ) {
+            (VISIBILITY_RANK[current] ?? 0);
+        // Writing new content into an already-public gist discloses it just as
+        // surely as widening a private one — same primitive, same content out
+        // of the model's context, only without a visibility change to notice.
+        // A call that narrows the visibility in the same breath is not a
+        // disclosure, which is why this tests the *effective* visibility.
+        const publishesContent =
+          fileOps !== undefined && effective !== 'private';
+
+        // Validate the operations BEFORE asking for a confirmation. A call that
+        // would be rejected anyway must not first cost the user a confirmation
+        // round-trip, and a token should only ever be issued for a call that
+        // could actually go through.
+        const existing = Object.keys(gist.files ?? {});
+        const payload =
+          fileOps === undefined
+            ? undefined
+            : buildFilesPayload(fileOps as FileOp[], existing, allowCreate);
+
+        if (widens || publishesContent) {
           // The token is bound to the ENTIRE effect of this call, not just the
           // new visibility. Otherwise a confirmation obtained for "make it
           // public" could be replayed with extra fileOps, title or description
           // attached — the user would have approved disclosure and additionally
           // get content changes they were never shown.
-          const effectFingerprint = createHash('sha256')
-            .update(
-              JSON.stringify({
-                title: title ?? null,
-                description: description ?? null,
-                visibility: newVisibility,
-                allowCreate,
-                fileOps:
-                  (fileOps as FileOp[] | undefined)?.map((op) =>
-                    op.op === 'write'
-                      ? ['write', op.filename, op.content]
-                      : [
-                          'rename',
-                          op.filename,
-                          op.newFilename,
-                          op.content ?? null,
-                        ]
-                  ) ?? null,
-              })
-            )
-            .digest('hex')
-            .slice(0, 16);
-          const resource = `gist:${id}:update:${newVisibility}:${effectFingerprint}`;
+          const effectFingerprint = fingerprint({
+            title: title ?? null,
+            description: description ?? null,
+            visibility: newVisibility,
+            allowCreate,
+            fileOps:
+              (fileOps as FileOp[] | undefined)?.map((op) =>
+                op.op === 'write'
+                  ? ['write', op.filename, op.content]
+                  : ['rename', op.filename, op.newFilename, op.content ?? null]
+              ) ?? null,
+          });
+          const resource = `gist:${id}:update:${effective}:${effectFingerprint}`;
           if (!confirmations.consume(resource, confirmToken)) {
             const token = confirmations.issue(resource);
             const opCount = fileOps === undefined ? 0 : fileOps.length;
@@ -278,22 +343,21 @@ export function registerGistWriteTools(
               description !== undefined && 'the description',
               opCount > 0 && `${opCount} file operation(s)`,
             ].filter((v): v is string => Boolean(v));
+            const headline = widens
+              ? `Changing the visibility of gist ${id} from ${current} to ${newVisibility} makes it readable by others and cannot be undone for anyone who already saw it. `
+              : `Gist ${id} is ${current}, so writing to it publishes the new content: ${opCount} file operation(s) whose content becomes readable by others and cannot be withdrawn from anyone who already saw it. `;
             return errorResult(
-              `Changing the visibility of gist ${id} from ${current} to ${newVisibility} makes it readable by others and cannot be undone for anyone who already saw it. ` +
-                `The gist has ${Object.keys(gist.files ?? {}).length} file(s). Title and description are withheld here on purpose (they are user-supplied text). ` +
-                (alsoChanges.length > 0
+              headline +
+                `The gist has ${Object.keys(gist.files ?? {}).length} file(s). Title, description and filenames are withheld here on purpose (they are user-supplied text). ` +
+                (widens && alsoChanges.length > 0
                   ? `This same call also changes ${alsoChanges.join(', ')} — confirm those too. `
-                  : 'This call changes nothing but the visibility. ') +
+                  : widens
+                    ? 'This call changes nothing but the visibility. '
+                    : '') +
                 `Confirm with the user, then call update_gist again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}" and otherwise identical arguments — the token only works for exactly this set of changes.`
             );
           }
         }
-
-        const existing = Object.keys(gist.files ?? {});
-        const payload =
-          fileOps === undefined
-            ? undefined
-            : buildFilesPayload(fileOps as FileOp[], existing, allowCreate);
 
         const body: Record<string, unknown> = {
           ...(title !== undefined && { title }),
@@ -372,11 +436,10 @@ export function registerGistWriteTools(
         const sorted = [...new Set(filenames)].sort();
         // Binding the token to the file set stops a confirmation for one file
         // from being replayed to delete additional ones.
-        const fingerprint = createHash('sha256')
+        const fileSetFingerprint = createHash('sha256')
           .update(sorted.join('\u0000'))
-          .digest('hex')
-          .slice(0, 16);
-        const resource = `gist:${id}:rmfiles:${fingerprint}`;
+          .digest('hex');
+        const resource = `gist:${id}:rmfiles:${fileSetFingerprint}`;
 
         const gist = await loadWritableGist(api, id);
         const existing = Object.keys(gist.files ?? {});

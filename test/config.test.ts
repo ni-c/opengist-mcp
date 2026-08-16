@@ -66,6 +66,35 @@ describe('loadConfig', () => {
     expect(environment.OPENGIST_URL).toBe('https://gist.example.com');
   });
 
+  it('removes the token even when the URL is missing', () => {
+    // The credential-less start path is exactly the one where a token is set
+    // and something else is wrong (a typo in the URL, a half-filled config),
+    // so an early return here would leave it in /proc/<pid>/environ.
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const environment: NodeJS.ProcessEnv = { OPENGIST_TOKEN: 'og_secret' };
+    const config = loadConfig(environment);
+    expect(environment.OPENGIST_TOKEN).toBeUndefined();
+    expect(config.token).toBe('og_secret');
+    error.mockRestore();
+  });
+
+  it('removes the token even when the URL is invalid', () => {
+    const exit = mockExit();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const environment: NodeJS.ProcessEnv = {
+      OPENGIST_URL: 'ftp://gist.example.com',
+      OPENGIST_TOKEN: 'og_secret',
+    };
+    try {
+      loadConfig(environment);
+    } catch {
+      // mockExit throws to stop the function, which is the point.
+    }
+    expect(environment.OPENGIST_TOKEN).toBeUndefined();
+    expect(exit).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
   it('warns but does not exit when required variables are missing', () => {
     // Registries and sandbox inspectors start the server without credentials
     // and expect the MCP handshake and tools/list to still work.

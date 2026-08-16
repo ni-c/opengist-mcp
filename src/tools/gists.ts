@@ -19,10 +19,12 @@ import {
 } from '../schema.js';
 import {
   Notes,
+  hasUntrustedAuthor,
   hasUntrustedMetadata,
   shapeCommit,
   shapeGistDetail,
   shapeGistSummary,
+  UNTRUSTED_AUTHOR_NOTE,
   UNTRUSTED_CONTENT_NOTE,
   UNTRUSTED_METADATA_NOTE,
   looksBinary,
@@ -306,6 +308,7 @@ export function registerGistReadTools(
         notes.addAll(
           paginationNotes(pagination, commits.length, 'list_gist_commits')
         );
+        if (hasUntrustedAuthor(commits)) notes.add(UNTRUSTED_AUTHOR_NOTE);
         return jsonResult({
           gistId: id,
           pagination,

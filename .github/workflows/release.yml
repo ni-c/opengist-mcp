@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run lint
       - run: npm run build
       - run: npm run test:coverage
@@ -44,8 +44,8 @@ jobs:
           fi
       # --ignore-scripts: this job holds an OIDC credential for Trusted
       # Publishing, so a postinstall script of any transitive dependency must
-      # not run here. The package's own prepublishOnly (lint, test, build) still
-      # runs during npm publish.
+      # not run here. The package's own prepublishOnly (build) still runs
+      # during npm publish; lint and tests ran in the `test` job this one needs.
       - run: npm ci --ignore-scripts
       - run: npm publish --provenance
 

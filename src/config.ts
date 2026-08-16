@@ -48,6 +48,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const readOnly = env.OPENGIST_READ_ONLY === 'true';
   const insecureTls = env.OPENGIST_INSECURE_TLS === 'true';
 
+  // Drop the token immediately after reading it, before any branch that can
+  // return or exit. Every early exit below is a path where the token *is* set
+  // but something else is wrong — a typo in the URL, or the credential-less
+  // start that registries use — and leaving it in the environment there would
+  // keep it readable in /proc/<pid>/environ and in every child process.
+  delete env.OPENGIST_TOKEN;
+
   const missing = [
     !rawUrl && 'OPENGIST_URL',
     !token && 'OPENGIST_TOKEN',
@@ -105,19 +112,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // a second /api to it.
   const url = rawUrl.replace(/\/+$/, '').replace(/\/api$/, '');
 
-  const config: Config = {
+  return {
     url,
     baseUrl: `${url}/api`,
     token,
     readOnly,
     insecureTls,
   };
-
-  // Don't keep the token in the environment for the process lifetime
-  // (visible to child processes and in /proc/<pid>/environ).
-  delete env.OPENGIST_TOKEN;
-
-  return config;
 }
 
 function isLoopbackHost(hostname: string): boolean {

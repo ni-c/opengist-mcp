@@ -136,6 +136,20 @@ describe('loadConfig', () => {
     expect(exit).toHaveBeenCalledWith(1);
   });
 
+  it('does not echo the offending value of an invalid URL', () => {
+    // Regression: this branch fires precisely when the variable does not hold a
+    // URL — most often because the token was pasted into the wrong one. The
+    // message used to quote the value, putting the token in the MCP host's log.
+    mockExit();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(() =>
+      loadConfig(env({ OPENGIST_URL: 'og_token_in_the_wrong_variable' }))
+    ).toThrow('process.exit');
+    const output = error.mock.calls.flat().join(' ');
+    expect(output).toMatch(/is not a valid URL/);
+    expect(output).not.toContain('og_token_in_the_wrong_variable');
+  });
+
   it('exits on a non-http(s) URL scheme', () => {
     const exit = mockExit();
     vi.spyOn(console, 'error').mockImplementation(() => {});

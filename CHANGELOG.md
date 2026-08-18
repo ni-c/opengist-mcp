@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- #region changelog -->
 
+## [0.2.3] - 2026-08-18
+
+### Fixed
+
+- A malformed `OPENGIST_URL` is no longer echoed into the log. That branch fires
+  precisely when the variable does not hold a URL, which most often means the
+  token was pasted into the wrong variable — and it then landed verbatim in the
+  MCP host's log.
+
 ## [0.2.2] - 2026-08-18
 
 ### Fixed

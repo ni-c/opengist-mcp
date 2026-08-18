@@ -1,6 +1,6 @@
 {
   "name": "opengist-mcp",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "mcpName": "io.github.ni-c/opengist-mcp",
   "description": "Model Context Protocol (MCP) server for Opengist, the self-hosted pastebin powered by Git",
   "keywords": [

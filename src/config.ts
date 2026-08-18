@@ -78,7 +78,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   try {
     parsed = new URL(rawUrl);
   } catch {
-    console.error(`opengist-mcp: OPENGIST_URL is not a valid URL: ${rawUrl}`);
+    // The value itself is not echoed: this branch fires precisely when the
+    // variable does not hold what was expected, and a token pasted into the
+    // wrong environment variable would otherwise be printed verbatim into the
+    // MCP host's log.
+    console.error(
+      'opengist-mcp: OPENGIST_URL is not a valid URL (e.g. https://gist.example.com)'
+    );
     process.exit(1);
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {

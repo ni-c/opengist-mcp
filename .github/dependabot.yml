@@ -21,6 +21,17 @@ updates:
           - minor
           - patch
 
+    ignore:
+      # typescript-eslint's peer range gates the TypeScript major: as of 8.67.0 it
+      # declares typescript ">=4.8.4 <6.1.0", so TS 7 cannot be installed here at
+      # all — npm aborts with ERESOLVE. Stated here rather than left as the
+      # "@dependabot ignore this major version" comment on the closed PR #1,
+      # because that lives in GitHub's per-PR state while the reason belongs next
+      # to the constraint. Unignore once that peer range moves.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+
   # The docs site has its own manifest and lockfile on purpose — the VitePress
   # toolchain must never enter the root one, which is installed in the Docker
   # build and in every test-matrix job.

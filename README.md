@@ -14,11 +14,15 @@ Lets MCP clients like Claude Code, Claude Desktop or Codex read, search, create,
 
 📖 **[Full documentation at opengist-mcp.ni-c.de](https://opengist-mcp.ni-c.de)**
 
-<!-- SYNC: docs/public/architecture.svg is the standalone copy embedded here and
-     on npm; docs/index.md holds the same diagram inline so it can follow the
-     site's theme toggle. Change both. -->
-
-![Architecture](https://opengist-mcp.ni-c.de/architecture.svg)
+<!-- <picture> is resolved against the colour scheme of the page showing it, so GitHub
+     picks the variant that matches its own theme toggle. npm strips <picture> and
+     <source> when it sanitises the README and keeps the <img>, which is why that
+     fallback brings its own dark card instead of relying on a media query. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://opengist-mcp.ni-c.de/architecture-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://opengist-mcp.ni-c.de/architecture-light.svg">
+  <img src="https://opengist-mcp.ni-c.de/architecture.svg" alt="An MCP client speaks stdio to opengist-mcp, which calls the Opengist REST API over HTTPS; the token stays in the server process and every response is shaped before it reaches the model" width="800">
+</picture>
 
 > **Note:** this server talks to the Opengist REST API under `/api`, which is available in recent Opengist releases and enabled by default (`api.enabled`). A running instance serves its own OpenAPI spec at `GET /api/openapi.yaml` — compare it against your version if a tool behaves unexpectedly.
 

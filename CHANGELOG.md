@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The architecture diagram no longer depends on the reader's operating system.
+  It carried a `prefers-color-scheme` block, which resolves against the OS rather
+  than the theme toggle of GitHub or npm — so dark-mode readers on a light OS got
+  the light artwork on a dark page. The README now uses `<picture>`, which is
+  resolved against the page, and the `<img>` that npm falls back to brings its own
+  card instead of a media query.
+
+### Changed
+
+- The diagram is generated from a single source, `docs/assets/architecture.source.svg`,
+  by `npm run assets`. The four rendered copies had already drifted apart; CI now
+  fails if one of them is edited by hand.
+- `docs/public/og.png` is generated at exactly 1280x640, GitHub's recommended size
+  for a social preview, instead of being drawn by hand.
+
 ## [0.2.1] - 2026-08-16
 
 ### Fixed

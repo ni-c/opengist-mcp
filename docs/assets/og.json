@@ -1,0 +1,8 @@
+{
+  "$comment": "Copy for docs/public/og.png, the GitHub social preview and the OpenGraph card. Rendered by scripts/gen-assets.mjs. Tagline and badges are split by hand because the renderer does not wrap text.",
+  "tagline": [
+    "MCP server for Opengist — search, read and write snippets",
+    "in the self-hosted pastebin that is really a Git server."
+  ],
+  "badges": ["14 tools", "MIT", "Node ≥22"]
+}

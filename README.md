@@ -7,6 +7,7 @@
 [![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fopengist--mcp-2496ed?logo=docker&logoColor=white)](https://github.com/ni-c/opengist-mcp/pkgs/container/opengist-mcp)
 [![docs](https://img.shields.io/badge/docs-opengist--mcp.ni--c.de-4f46e5)](https://opengist-mcp.ni-c.de)
 [![license](https://img.shields.io/npm/l/opengist-mcp.svg)](LICENSE)
+[![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Opengist](https://github.com/thomiceli/opengist), the self-hosted pastebin powered by Git.
 

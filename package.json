@@ -21,6 +21,7 @@
     "url": "https://github.com/ni-c/opengist-mcp/issues"
   },
   "homepage": "https://opengist-mcp.ni-c.de",
+  "funding": "https://github.com/sponsors/ni-c",
   "type": "module",
   "bin": {
     "opengist-mcp": "dist/index.js"

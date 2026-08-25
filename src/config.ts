@@ -1,3 +1,5 @@
+import { internalHostKind } from './hosts.js';
+
 export interface Config {
   /**
    * Root URL of the Opengist instance without a trailing slash, e.g.
@@ -128,11 +130,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 }
 
 function isLoopbackHost(hostname: string): boolean {
-  return (
-    hostname === 'localhost' ||
-    hostname.endsWith('.localhost') ||
-    hostname.startsWith('127.') ||
-    hostname === '::1' ||
-    hostname === '[::1]'
-  );
+  // The shared classifier, so every spelling of a loopback address is
+  // recognised — including http://[::ffff:127.0.0.1] and 'localhost.' with its
+  // root label, which the string comparison this replaced did not see.
+  return internalHostKind(hostname) === 'loopback';
 }

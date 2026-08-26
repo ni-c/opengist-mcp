@@ -1,19 +1,17 @@
 # opengist-mcp
 
-[![CI](https://github.com/ni-c/opengist-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ni-c/opengist-mcp/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/opengist-mcp.svg)](https://www.npmjs.com/package/opengist-mcp)
-[![npm downloads](https://img.shields.io/npm/dm/opengist-mcp.svg)](https://www.npmjs.com/package/opengist-mcp)
-[![node](https://img.shields.io/node/v/opengist-mcp.svg)](https://www.npmjs.com/package/opengist-mcp)
-[![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fopengist--mcp-2496ed?logo=docker&logoColor=white)](https://github.com/ni-c/opengist-mcp/pkgs/container/opengist-mcp)
-[![docs](https://img.shields.io/badge/docs-opengist--mcp.ni--c.de-4f46e5)](https://opengist-mcp.ni-c.de)
-[![license](https://img.shields.io/npm/l/opengist-mcp.svg)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/ni-c/opengist-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/opengist-mcp/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/opengist-mcp)](https://www.npmjs.com/package/opengist-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/opengist-mcp)](https://www.npmjs.com/package/opengist-mcp)
+[![node](https://img.shields.io/node/v/opengist-mcp)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/opengist-mcp)](LICENSE)
+[![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fopengist--mcp-blue)](https://github.com/ni-c/opengist-mcp/pkgs/container/opengist-mcp)
+[![docs](https://img.shields.io/badge/docs-opengist--mcp.ni--c.de-informational)](https://opengist-mcp.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Opengist](https://github.com/thomiceli/opengist), the self-hosted pastebin powered by Git.
 
 Lets MCP clients like Claude Code, Claude Desktop or Codex read, search, create, update and delete gists on your own Opengist instance: file contents and revisions, commit history, forks and likes, plus your user account.
-
-📖 **[Full documentation at opengist-mcp.ni-c.de](https://opengist-mcp.ni-c.de)**
 
 <!-- <picture> is resolved against the colour scheme of the page showing it, so GitHub
      picks the variant that matches its own theme toggle. npm strips <picture> and

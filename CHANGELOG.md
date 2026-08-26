@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `OPENGIST_ALLOW_TOOLS` and `OPENGIST_DENY_TOOLS` choose which of the 14
+  tools are registered. Both take comma-separated tool names or a prefix with a
+  trailing `*`, the allow list decides what is in and the deny list is subtracted
+  from it, and `OPENGIST_ALLOW_TOOLS=essential` selects a curated seven —
+  `list_gists`, `search_gists`, `get_gist`, `get_gist_file`, `create_gist`, `update_gist`, `delete_gist`. A model picks the right tool far more reliably from seven than
+  from fourteen, and every visible tool costs context on every request. Nothing
+  changes for an installation that sets neither.
+
+  A filtered tool is not registered at all, so it is absent from `tools/list`
+  and answers `tools/call` with "tool not found" — the same cut
+  `OPENGIST_READ_ONLY` already makes, not a second, weaker one.
+
+  An entry that matches no tool **stops the server at startup**, naming the
+  entry and listing the real names, rather than being ignored: an ignored typo
+  leaves a tool missing from `tools/list` with nothing pointing at the cause.
+
 ### Fixed
 
 - The container image no longer ships OpenSSL 3.5.7-r0, which carries

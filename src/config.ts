@@ -13,7 +13,15 @@ export interface Config {
   token: string | undefined;
   /** When true, no write tools are registered at all. */
   readOnly: boolean;
-  insecureTls: boolean;
+  insecureTls: boolean; /**
+   * Raw value of `OPENGIST_ALLOW_TOOLS` — comma-separated tool names, `list_*`
+   * prefixes, or `essential`. Kept unparsed on purpose: this file is a mirror of
+   * the environment, and the names can only be checked against the tool
+   * catalogue, which `buildToolFilter` does.
+   */
+  allowTools: string | undefined;
+  /** Raw value of `OPENGIST_DENY_TOOLS`, same shape, subtracted from the above. */
+  denyTools: string | undefined;
 }
 
 /** Shown when the configuration is incomplete — at startup and on every API call. */
@@ -49,6 +57,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const token = env.OPENGIST_TOKEN;
   const readOnly = env.OPENGIST_READ_ONLY === 'true';
   const insecureTls = env.OPENGIST_INSECURE_TLS === 'true';
+  const allowTools = env.OPENGIST_ALLOW_TOOLS;
+  const denyTools = env.OPENGIST_DENY_TOOLS;
 
   // Drop the token immediately after reading it, before any branch that can
   // return or exit. Every early exit below is a path where the token *is* set
@@ -73,6 +83,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       token,
       readOnly,
       insecureTls,
+      allowTools,
+      denyTools,
     };
   }
 
@@ -124,6 +136,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     url,
     baseUrl: `${url}/api`,
     token,
+    allowTools,
+    denyTools,
     readOnly,
     insecureTls,
   };

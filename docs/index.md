@@ -19,6 +19,8 @@ features:
     details: Reading, searching, writing, forking and liking gists — including revisions, commit history and raw file access — derived from the Opengist REST API and verified against a live instance.
   - title: Bounded by construction
     details: File contents are capped per file and against an overall budget, binary files are never dumped as text, and every truncation names the call that fetches the rest.
+  - title: Register a subset, not the lot
+    details: 'OPENGIST_READ_ONLY=true registers the read tools and nothing else. OPENGIST_ALLOW_TOOLS cuts finer — essential for a curated seven, your own comma-separated list, or a whole family with list_* — and OPENGIST_DENY_TOOLS subtracts. Whatever is filtered out does not exist on the protocol rather than failing when called, and a name that matches no tool stops the server at startup instead of quietly going missing.'
   - title: Safe by default
     details: Deleting and publishing need a server-issued confirmation token bound to the exact target and content, upstream text is marked untrusted, and read-only mode simply does not register the write tools.
 ---

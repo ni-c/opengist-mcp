@@ -13,6 +13,11 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Op
 
 Lets MCP clients like Claude Code, Claude Desktop or Codex read, search, create, update and delete gists on your own Opengist instance: file contents and revisions, commit history, forks and likes, plus your user account.
 
+Fourteen tools is the ceiling, not the floor: `OPENGIST_ALLOW_TOOLS=essential`
+registers a curated seven instead, and a model picks the right tool far more
+reliably from seven than from fourteen — see
+[choosing which tools load](#choosing-which-tools-load).
+
 <!-- <picture> is resolved against the colour scheme of the page showing it, so GitHub
      picks the variant that matches its own theme toggle. npm strips <picture> and
      <source> when it sanitises the README and keeps the <img>, which is why that
@@ -45,10 +50,34 @@ Lets MCP clients like Claude Code, Claude Desktop or Codex read, search, create,
 | `OPENGIST_TOKEN`        | yes      | Personal Access Token, starts with `og_`                                                                |
 | `OPENGIST_READ_ONLY`    | no       | `true` registers only the read tools; the write tools do not exist at all in that session               |
 | `OPENGIST_INSECURE_TLS` | no       | `true` accepts self-signed certificates, scoped to the Opengist connection (never process-wide)         |
+| `OPENGIST_ALLOW_TOOLS`  | no       | Comma-separated tool names, `list_*` prefixes, or `essential` for a curated preset                      |
+| `OPENGIST_DENY_TOOLS`   | no       | Same syntax; removed from whatever `OPENGIST_ALLOW_TOOLS` left                                          |
 
 > The token is read once at startup and then removed from `process.env`, so it is not visible to child processes. Use `https://` for anything but a loopback address — over plain http the token and every gist travel in cleartext.
 >
 > If your instance's `external-url` is not configured, the URLs Opengist reports (and this server passes through) point at `localhost`. Set `external-url` / `OG_EXTERNAL_URL` on the instance so links are usable.
+
+### Choosing which tools load
+
+`OPENGIST_ALLOW_TOOLS` and `OPENGIST_DENY_TOOLS` take comma-separated tool names;
+a trailing `*` matches a whole family. `essential` is a curated preset of
+seven: `list_gists`, `search_gists`, `get_gist`, `get_gist_file`, `create_gist`, `update_gist`, `delete_gist`.
+
+```sh
+OPENGIST_ALLOW_TOOLS=essential
+OPENGIST_ALLOW_TOOLS=list_gists,get_gist_file,create_gist
+OPENGIST_DENY_TOOLS=delete_*
+```
+
+An entry that matches no tool aborts startup and names it, so a typo cannot
+silently hide a tool — an absent tool is not something anyone traces back to an
+environment variable. A filtered tool is never registered, so it is absent from
+`tools/list` and unknown to `tools/call` alike, exactly like a write tool under
+`OPENGIST_READ_ONLY`.
+
+If you run several of these servers at once, [mcp-hub](https://mcp-hub.ni-c.de)
+is the other answer — its `/hub` endpoint replaces every server's tools with six
+meta-tools.
 
 ## Installation
 

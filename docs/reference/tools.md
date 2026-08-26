@@ -1,5 +1,10 @@
 # Tools
 
+All fourteen are registered unless you say otherwise. `OPENGIST_ALLOW_TOOLS` and
+`OPENGIST_DENY_TOOLS` narrow the list to the ones you want, and `essential` selects a
+curated seven — see
+[choosing the tools that load](/guide/configuration#choosing-the-tools-that-load).
+
 Fourteen tools. With `OPENGIST_READ_ONLY=true` only the eight reading tools are
 registered — the writing ones do not appear in `tools/list` at all.
 

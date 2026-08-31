@@ -1,9 +1,5 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { OpengistApi } from '../api.js';
-import { parsePagination } from '../pagination.js';
-import { jsonResult, run } from '../result.js';
 import {
   gistScope,
   since,
@@ -18,6 +14,9 @@ import {
   type RawGist,
 } from '../shape.js';
 
+import type { OpengistApi } from '../api.js';
+import { parsePagination } from '../pagination.js';
+import { jsonResult, run } from '../result.js';
 import { listPath } from './gists.js';
 
 /** Pages are 100 items each; scanning more than this is never worth the wait. */
@@ -51,7 +50,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
         'Opengist has no search API, so this pages through the list endpoints and filters client-side — it is therefore bounded and can be incomplete; ' +
         'the result always says how much was scanned and whether it was cut short. ' +
         'Searching inside file contents is not supported (it would mean downloading every file of every gist): narrow the field here, then read candidates with get_gist.',
-      inputSchema: {
+      inputSchema: z.object({
         query: z
           .string()
           .min(1)
@@ -94,7 +93,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
           .describe(
             `Pages of ${SCAN_PER_PAGE} gists to scan at most (1-${MAX_PAGES})`
           ),
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     ({

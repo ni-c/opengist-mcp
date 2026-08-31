@@ -1,12 +1,6 @@
 import { createHash } from 'node:crypto';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { OpengistApi } from '../api.js';
-import type { ConfirmationStore } from '../confirm.js';
-import { errorResult, jsonResult, run, ToolInputError } from '../result.js';
-import { filename, gistId, gistPath, visibility } from '../schema.js';
 import {
   buildFilesPayload,
   Notes,
@@ -14,6 +8,11 @@ import {
   type FileOp,
   type RawGist,
 } from '../shape.js';
+
+import type { OpengistApi } from '../api.js';
+import type { ConfirmationStore } from '../confirm.js';
+import { errorResult, jsonResult, run, ToolInputError } from '../result.js';
+import { filename, gistId, gistPath, visibility } from '../schema.js';
 
 const SUMMARY_OPTIONS = {
   includeContent: false,
@@ -69,7 +68,7 @@ export function registerGistWriteTools(
         'Expiry can only be set here, never changed afterwards. ' +
         'visibility "public" or "unlisted" publishes the content and therefore needs a confirmToken: ' +
         'the first call is refused and returns one. Use "private" unless the user asked for otherwise.',
-      inputSchema: {
+      inputSchema: z.object({
         files: z
           .array(
             z.object({
@@ -113,7 +112,7 @@ export function registerGistWriteTools(
           .describe(
             'Delete the gist automatically at this RFC 3339 timestamp. Mutually exclusive with expire.'
           ),
-      },
+      }),
       annotations: {},
     },
     ({
@@ -219,7 +218,7 @@ export function registerGistWriteTools(
         'This tool can never delete a file; use delete_gist_files for that. ' +
         'Widening the visibility (private → unlisted/public, unlisted → public) discloses the gist and therefore needs a confirmToken, ' +
         'as does writing files into a gist that is already public or unlisted. Narrowing the visibility does not.',
-      inputSchema: {
+      inputSchema: z.object({
         gistId,
         title: z.string().max(250).optional(),
         description: z.string().max(1000).optional(),
@@ -269,7 +268,7 @@ export function registerGistWriteTools(
           .describe(
             'Only needed when widening the visibility. Omit on the first call; the refusal returns the token.'
           ),
-      },
+      }),
       annotations: { idempotentHint: true },
     },
     ({
@@ -418,7 +417,7 @@ export function registerGistWriteTools(
       description:
         'Delete one or more files from a gist. The files disappear from the current revision; older revisions keep them in the git history. ' +
         'The first call returns a short-lived confirmation token bound to exactly these filenames; ask the user, then call again with confirmToken.',
-      inputSchema: {
+      inputSchema: z.object({
         gistId,
         filenames: z
           .array(filename)
@@ -431,7 +430,7 @@ export function registerGistWriteTools(
           .describe(
             'Confirmation token from a previous delete_gist_files call for the same gist and the same files. Omit on the first call.'
           ),
-      },
+      }),
       annotations: { destructiveHint: true },
     },
     ({ gistId: id, filenames, confirmToken }) =>
@@ -496,7 +495,7 @@ export function registerGistWriteTools(
       description:
         'Permanently delete a gist. This is irreversible: the git repository with every revision and the database row are destroyed. ' +
         'The first call returns a short-lived confirmation token; ask the user for confirmation, then call again with confirmToken.',
-      inputSchema: {
+      inputSchema: z.object({
         gistId,
         confirmToken: z
           .string()
@@ -504,7 +503,7 @@ export function registerGistWriteTools(
           .describe(
             'Confirmation token from a previous delete_gist call for the same gist. Omit on the first call.'
           ),
-      },
+      }),
       annotations: { destructiveHint: true },
     },
     ({ gistId: id, confirmToken }) =>
@@ -536,7 +535,7 @@ export function registerGistWriteTools(
       title: 'Fork a gist',
       description:
         "Fork somebody else's gist into your own account. Forking a gist you already forked returns the existing fork instead of creating a second one.",
-      inputSchema: { gistId },
+      inputSchema: z.object({ gistId }),
       annotations: { idempotentHint: true },
     },
     ({ gistId: id }) =>

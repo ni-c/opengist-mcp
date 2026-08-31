@@ -1,9 +1,5 @@
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult } from '@modelcontextprotocol/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { Notes, shapeGistDetail, shapeUser } from '../src/shape.js';
-import { withQuery } from '../src/schema.js';
-
 import {
   connectClient,
   gistFixture,
@@ -14,6 +10,9 @@ import {
   stubFetch,
   textResponse,
 } from './helpers.js';
+
+import { Notes, shapeGistDetail, shapeUser } from '../src/shape.js';
+import { withQuery } from '../src/schema.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();

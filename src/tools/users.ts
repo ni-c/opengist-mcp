@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import { OpengistApiError, type OpengistApi } from '../api.js';
@@ -40,7 +40,7 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
       description:
         'Get an Opengist user account. Without arguments this returns the account the access token belongs to (including its email); ' +
         "with username or userId it returns that user's public profile.",
-      inputSchema: {
+      inputSchema: z.object({
         username: username
           .optional()
           .describe('Look up this username instead of the token owner'),
@@ -50,7 +50,7 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
           .positive()
           .optional()
           .describe('Look up this numeric user ID instead of the token owner'),
-      },
+      }),
       annotations: { readOnlyHint: true },
     },
     ({ username: name, userId }) =>
@@ -100,7 +100,7 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
       title: 'Check whether a gist is liked',
       description:
         'Report whether the token owner has liked the given gist. Also distinguishes "not liked" from "not visible to you".',
-      inputSchema: { gistId },
+      inputSchema: z.object({ gistId }),
       annotations: { readOnlyHint: true },
     },
     ({ gistId: id }) =>
@@ -130,12 +130,12 @@ export function registerLikeWriteTools(
       description:
         'Like or unlike a gist. Idempotent: the current state is read first and the gist is only toggled when it differs, ' +
         'so calling this twice with the same value does not undo it. Requires the user:write scope on the access token.',
-      inputSchema: {
+      inputSchema: z.object({
         gistId,
         liked: z
           .boolean()
           .describe('true to like the gist, false to remove the like'),
-      },
+      }),
       annotations: { idempotentHint: true },
     },
     ({ gistId: id, liked }) =>

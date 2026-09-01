@@ -1,0 +1,28 @@
+# Throwaway Opengist for `npm run test:integration`.
+#
+# Not a managed stack: brought up, filled by test/integration/bootstrap.ts, and
+# destroyed with `down -v` afterwards. The suite calls every tool in the
+# catalogue, deletes included, so nothing here may hold a gist anybody wants.
+#
+# Bound to 127.0.0.1 only.
+services:
+  opengist:
+    # Overridable so the weekly CI run can point at :latest and report drift
+    # without changing what the PR gate tests.
+    image: ${OPENGIST_IMAGE:-ghcr.io/thomiceli/opengist:1.15.2}
+    environment:
+      # Without this every link Opengist generates points at "localhost" with
+      # its own internal port, and the URLs in a gist's JSON are then wrong in
+      # a way that only shows up when something tries to follow one.
+      OG_EXTERNAL_URL: http://127.0.0.1:6157
+      OG_HTTP_HOST: 0.0.0.0
+      OG_HTTP_PORT: '6157'
+      # The suite creates its own account through the sign-up form; the first
+      # account on a fresh instance becomes the admin.
+      OG_DISABLE_SIGNUP: 'false'
+      OG_LOG_LEVEL: warn
+    tmpfs:
+      # SQLite and the git repositories live for the length of one run.
+      - /opengist
+    ports:
+      - '127.0.0.1:6157:6157'

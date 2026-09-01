@@ -2,7 +2,7 @@ import type { CallToolResult } from '@modelcontextprotocol/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  connectClient,
+  connect,
   gistFixture,
   jsonResponse,
   pageHeaders,
@@ -10,7 +10,7 @@ import {
   resultText,
   stubFetch,
   textResponse,
-} from './helpers.js';
+} from './harness.js';
 
 const READ_TOOLS = [
   'check_gist_like',
@@ -39,7 +39,7 @@ afterEach(() => {
 
 describe('tool registration', () => {
   it('exposes all read and write tools', async () => {
-    const client = await connectClient();
+    const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [...READ_TOOLS, ...WRITE_TOOLS].sort()
@@ -47,13 +47,13 @@ describe('tool registration', () => {
   });
 
   it('registers no write tools in read-only mode', async () => {
-    const client = await connectClient({ readOnly: true });
+    const client = await connect({ readOnly: true });
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...READ_TOOLS].sort());
   });
 
   it('annotates read, destructive and idempotent tools', async () => {
-    const client = await connectClient();
+    const client = await connect();
     const { tools } = await client.listTools();
     const byName = new Map(tools.map((t) => [t.name, t]));
 
@@ -77,7 +77,7 @@ describe('tool registration', () => {
     // silence suggests: the specification gives destructiveHint and
     // openWorldHint a default of true, so a tool that omits them announces
     // itself as destructive and open-world.
-    const client = await connectClient();
+    const client = await connect();
     const { tools } = await client.listTools();
     const hints = [
       'readOnlyHint',
@@ -100,7 +100,7 @@ describe('tool registration', () => {
     // nothing is lost. No annotation carries that, so create_gist stays
     // additive. update_gist is destructive for the separate reason that a
     // file operation replaces what the gist serves now.
-    const client = await connectClient();
+    const client = await connect();
     const { tools } = await client.listTools();
     const byName = new Map(tools.map((t) => [t.name, t.annotations]));
     expect(byName.get('create_gist')?.destructiveHint).toBe(false);
@@ -139,7 +139,7 @@ describe('list_gists', () => {
     'maps scope=%s username=%s to the right endpoint',
     async (scope, username, expected) => {
       const calls = stubFetch(() => jsonResponse([]));
-      const client = await connectClient();
+      const client = await connect();
       await client.callTool({
         name: 'list_gists',
         arguments: { scope, ...(username !== undefined && { username }) },
@@ -150,7 +150,7 @@ describe('list_gists', () => {
 
   it('sends the bearer token', async () => {
     const calls = stubFetch(() => jsonResponse([]));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({ name: 'list_gists', arguments: {} });
     const headers = calls[0]?.init?.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer og_test');
@@ -158,7 +158,7 @@ describe('list_gists', () => {
 
   it('rejects scope=public together with a username without any request', async () => {
     const calls = stubFetch(() => jsonResponse([]));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: { scope: 'public', username: 'bob' },
@@ -172,7 +172,7 @@ describe('list_gists', () => {
     stubFetch(() =>
       jsonResponse([gistFixture()], 200, pageHeaders(2, 30, 137))
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: { page: 2 },
@@ -191,7 +191,7 @@ describe('list_gists', () => {
 
   it('passes the since filter through', async () => {
     const calls = stubFetch(() => jsonResponse([]));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'list_gists',
       arguments: { since: '2026-01-01T00:00:00Z' },
@@ -201,7 +201,7 @@ describe('list_gists', () => {
 
   it('omits file contents from the summaries', async () => {
     stubFetch(() => jsonResponse([gistFixture()]));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: {},
@@ -213,7 +213,7 @@ describe('list_gists', () => {
 describe('get_gist', () => {
   it('returns file contents but omits commits and forks by default', async () => {
     stubFetch(() => jsonResponse(gistFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123' },
@@ -233,7 +233,7 @@ describe('get_gist', () => {
       committed_at: '2026-01-02T00:00:00Z',
     }));
     stubFetch(() => jsonResponse(gistFixture({ commits })));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123', includeCommits: true, maxCommits: 2 },
@@ -245,7 +245,7 @@ describe('get_gist', () => {
 
   it('reads a specific revision', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture()));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123', sha: 'aaaa1111' },
@@ -255,7 +255,7 @@ describe('get_gist', () => {
 
   it('rejects a non-hex sha before any request', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123', sha: 'HEAD' },
@@ -271,7 +271,7 @@ describe('get_gist', () => {
       },
     });
     stubFetch(() => jsonResponse(gist));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123', maxFileBytes: 10 },
@@ -291,7 +291,7 @@ describe('get_gist', () => {
       },
     });
     stubFetch(() => jsonResponse(gist));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123', maxTotalBytes: 10, maxFileBytes: 10 },
@@ -312,7 +312,7 @@ describe('get_gist', () => {
       },
     });
     stubFetch(() => jsonResponse(gist));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123' },
@@ -324,7 +324,7 @@ describe('get_gist', () => {
 
   it('skips contents entirely when includeContent is false', async () => {
     stubFetch(() => jsonResponse(gistFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123', includeContent: false },
@@ -338,7 +338,7 @@ describe('get_gist', () => {
         gistFixture({ archived: true, expires_at: '2027-01-01T00:00:00Z' })
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123' },
@@ -350,7 +350,7 @@ describe('get_gist', () => {
 
   it('flags gist content as untrusted', async () => {
     stubFetch(() => jsonResponse(gistFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123' },
@@ -360,7 +360,7 @@ describe('get_gist', () => {
 
   it('only includes clone URLs on request', async () => {
     stubFetch(() => jsonResponse(gistFixture()));
-    const client = await connectClient();
+    const client = await connect();
     const without = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123' },
@@ -384,7 +384,7 @@ describe('get_gist_file', () => {
         ? jsonResponse([{ version: 'abcdef123456' }])
         : textResponse('file body')
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist_file',
       arguments: { gistId: 'abc123', filename: 'notes.md' },
@@ -403,7 +403,7 @@ describe('get_gist_file', () => {
 
   it('uses an explicit sha without asking for commits', async () => {
     const calls = stubFetch(() => textResponse('body'));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'get_gist_file',
       arguments: { gistId: 'abc123', filename: 'notes.md', sha: 'aaaa1111' },
@@ -416,7 +416,7 @@ describe('get_gist_file', () => {
 
   it('url-encodes the filename', async () => {
     const calls = stubFetch(() => textResponse('body'));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'get_gist_file',
       arguments: {
@@ -432,7 +432,7 @@ describe('get_gist_file', () => {
 
   it('slices with offset and maxBytes and reports the remainder', async () => {
     stubFetch(() => textResponse('0123456789'));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist_file',
       arguments: {
@@ -451,7 +451,7 @@ describe('get_gist_file', () => {
 
   it('errors when the gist has no commits', async () => {
     stubFetch(() => jsonResponse([]));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist_file',
       arguments: { gistId: 'abc123', filename: 'a.txt' },
@@ -469,7 +469,7 @@ describe('list_gist_commits and list_gist_forks', () => {
         'x-per-page': '30',
       })
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gist_commits',
       arguments: { gistId: 'abc123' },
@@ -481,7 +481,7 @@ describe('list_gist_commits and list_gist_forks', () => {
 
   it('lists forks as summaries', async () => {
     const calls = stubFetch(() => jsonResponse([gistFixture({ id: 'fork1' })]));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gist_forks',
       arguments: { gistId: 'abc123' },
@@ -498,7 +498,7 @@ describe('list_gist_commits and list_gist_forks', () => {
 describe('get_user', () => {
   it('returns the token owner without arguments', async () => {
     const calls = stubFetch(() => jsonResponse({ username: 'willi' }));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_user',
       arguments: {},
@@ -509,7 +509,7 @@ describe('get_user', () => {
 
   it('looks up by username and by id', async () => {
     const calls = stubFetch(() => jsonResponse({ username: 'bob' }));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({ name: 'get_user', arguments: { username: 'bob' } });
     await client.callTool({ name: 'get_user', arguments: { userId: 7 } });
     expect(calls[0]?.url).toBe('http://gist.test/api/users/bob');
@@ -518,7 +518,7 @@ describe('get_user', () => {
 
   it('rejects username and userId together', async () => {
     const calls = stubFetch(() => jsonResponse({}));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_user',
       arguments: { username: 'bob', userId: 7 },
@@ -531,7 +531,7 @@ describe('get_user', () => {
 describe('likes', () => {
   it('reports a liked gist', async () => {
     stubFetch(() => jsonResponse(null, 204));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'check_gist_like',
       arguments: { gistId: 'abc123' },
@@ -545,7 +545,7 @@ describe('likes', () => {
         ? jsonResponse({ message: 'not found' }, 404)
         : jsonResponse(gistFixture())
     );
-    const client = await connectClient();
+    const client = await connect();
     const notLiked = (await client.callTool({
       name: 'check_gist_like',
       arguments: { gistId: 'abc123' },
@@ -568,7 +568,7 @@ describe('likes', () => {
 
   it('does not toggle when the like is already in the wanted state', async () => {
     const calls = stubFetch(() => jsonResponse(null, 204));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'set_gist_like',
       arguments: { gistId: 'abc123', liked: true },
@@ -585,7 +585,7 @@ describe('likes', () => {
       if (url.endsWith('/like')) return jsonResponse(null, 204);
       return jsonResponse(gistFixture());
     });
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'set_gist_like',
       arguments: { gistId: 'abc123', liked: true },
@@ -598,7 +598,7 @@ describe('likes', () => {
 describe('input validation', () => {
   it('rejects path traversal in the gist ID before any request', async () => {
     const calls = stubFetch(() => jsonResponse({}));
-    const client = await connectClient();
+    const client = await connect();
     for (const gistId of ['..', '.', 'a/../b', 'a b']) {
       const result = (await client.callTool({
         name: 'get_gist',
@@ -611,7 +611,7 @@ describe('input validation', () => {
 
   it('rejects filenames with slashes or dot segments', async () => {
     const calls = stubFetch(() => textResponse('x'));
-    const client = await connectClient();
+    const client = await connect();
     for (const filename of ['../../etc/passwd', 'a/b.txt', '..', 'a\\b']) {
       const result = (await client.callTool({
         name: 'get_gist_file',
@@ -624,7 +624,7 @@ describe('input validation', () => {
 
   it('rejects perPage above 100', async () => {
     const calls = stubFetch(() => jsonResponse([]));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: { perPage: 101 },
@@ -637,7 +637,7 @@ describe('input validation', () => {
 describe('request hardening', () => {
   it('refuses redirects and sets a timeout on every request', async () => {
     const calls = stubFetch(() => jsonResponse([]));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({ name: 'list_gists', arguments: {} });
     expect(calls[0]?.init?.redirect).toBe('error');
     expect(calls[0]?.init?.signal).toBeInstanceOf(AbortSignal);
@@ -647,7 +647,7 @@ describe('request hardening', () => {
 describe('error handling', () => {
   it('names the token on 401', async () => {
     stubFetch(() => jsonResponse({ message: 'unauthorized' }, 401));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: {},
@@ -658,7 +658,7 @@ describe('error handling', () => {
 
   it('names the scopes on 403', async () => {
     stubFetch(() => jsonResponse({ message: 'forbidden' }, 403));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: {},
@@ -668,7 +668,7 @@ describe('error handling', () => {
 
   it('explains the private-gist 404 semantics', async () => {
     stubFetch(() => jsonResponse({ message: 'not found' }, 404));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123' },
@@ -689,7 +689,7 @@ describe('error handling', () => {
           }
         )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: {},
@@ -701,7 +701,7 @@ describe('error handling', () => {
 
   it('truncates oversized error bodies', async () => {
     stubFetch(() => jsonResponse({ message: 'x'.repeat(5000) }, 500));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: {},
@@ -719,7 +719,7 @@ describe('starting without credentials', () => {
   const unconfigured = { url: undefined, baseUrl: undefined, token: undefined };
 
   it('lists every tool without credentials', async () => {
-    const client = await connectClient(unconfigured);
+    const client = await connect(unconfigured);
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
       [...READ_TOOLS, ...WRITE_TOOLS].sort()
@@ -728,7 +728,7 @@ describe('starting without credentials', () => {
 
   it('fails a call with the setup instructions and without a request', async () => {
     const calls = stubFetch(() => jsonResponse({}));
-    const client = await connectClient(unconfigured);
+    const client = await connect(unconfigured);
 
     const result = (await client.callTool({
       name: 'list_gists',
@@ -743,7 +743,7 @@ describe('starting without credentials', () => {
   });
 
   it('never leaks the token value into an error', async () => {
-    const client = await connectClient({ token: undefined });
+    const client = await connect({ token: undefined });
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: {},
@@ -761,7 +761,7 @@ describe('untrusted metadata', () => {
         pageHeaders(1, 1)
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: {},
@@ -778,7 +778,7 @@ describe('untrusted metadata', () => {
         pageHeaders(1, 1)
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: {},
@@ -793,7 +793,7 @@ describe('caller fields cannot reach the API', () => {
   // keys. This pins that: a caller-invented field must never be forwarded.
   it('strips unknown input fields from the request body', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture({ id: 'abc123' })));
-    const client = await connectClient();
+    const client = await connect();
 
     await client.callTool({
       name: 'create_gist',

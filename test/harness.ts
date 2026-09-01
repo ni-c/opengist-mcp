@@ -91,7 +91,7 @@ export type ElicitBehaviour = 'accept' | 'decline' | 'cancel';
  * the client answers the dialog and `prompts` records what the server put in
  * front of the user.
  */
-export async function connectClient(
+export async function connect(
   overrides: Partial<Config> = {},
   elicit?: ElicitBehaviour
 ): Promise<Client & { prompts: string[] }> {
@@ -182,4 +182,39 @@ export function gistFixture(
     forks: [],
     ...overrides,
   };
+}
+
+/** The confirmation token a guarded tool handed back on its first call. */
+export function tokenOf(result: CallToolResult): string {
+  const match = /confirm_token="([0-9a-f]+)"/.exec(resultText(result));
+  if (match?.[1] === undefined) {
+    throw new Error(
+      `no confirm_token in the result — did the client declare elicitation? ` +
+        `Got: ${resultText(result).slice(0, 300)}`
+    );
+  }
+  return match[1];
+}
+
+/**
+ * Runs a guarded tool through both halves of its two-call token.
+ *
+ * Takes the client rather than living on what `connect` returns, so the
+ * signature matches every other repository in this family. Only meaningful on
+ * a client that declared no elicitation: with a dialog available the server
+ * asks instead of offering a token, which is the point of the dialog.
+ */
+export async function confirmed(
+  client: Client,
+  name: string,
+  args: Record<string, unknown> = {}
+): Promise<CallToolResult> {
+  const first = (await client.callTool({
+    name,
+    arguments: args,
+  })) as CallToolResult;
+  return client.callTool({
+    name,
+    arguments: { ...args, confirm_token: tokenOf(first) },
+  }) as Promise<CallToolResult>;
 }

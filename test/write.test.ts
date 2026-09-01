@@ -2,14 +2,15 @@ import type { CallToolResult } from '@modelcontextprotocol/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  connectClient,
+  connect,
   gistFixture,
   jsonResponse,
   requestBody,
   resultJson,
   resultText,
   stubFetch,
-} from './helpers.js';
+  tokenOf,
+} from './harness.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -17,18 +18,10 @@ afterEach(() => {
 });
 
 /** Extracts the confirmation token out of a refusal message. */
-function tokenFrom(result: CallToolResult): string {
-  const match = /confirm_token="([0-9a-f]+)"/.exec(resultText(result));
-  if (match?.[1] === undefined) {
-    throw new Error(`no token in: ${resultText(result)}`);
-  }
-  return match[1];
-}
-
 describe('create_gist', () => {
   it('turns the file array into the keyed map the API expects', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -53,7 +46,7 @@ describe('create_gist', () => {
 
   it('requires a visibility', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'create_gist',
       arguments: { files: [{ filename: 'a.txt', content: 'A' }] },
@@ -64,7 +57,7 @@ describe('create_gist', () => {
 
   it('rejects empty file content', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -78,7 +71,7 @@ describe('create_gist', () => {
 
   it('rejects duplicate filenames', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -96,7 +89,7 @@ describe('create_gist', () => {
 
   it('rejects expire and expiresAt together', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -112,7 +105,7 @@ describe('create_gist', () => {
 
   it('rejects an expiry in the past', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -128,7 +121,7 @@ describe('create_gist', () => {
 
   it('refuses to create a public gist without a confirmation token', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -147,7 +140,7 @@ describe('create_gist', () => {
 
   it('refuses to create an unlisted gist without a confirmation token', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -164,7 +157,7 @@ describe('create_gist', () => {
 
   it('does not echo filenames, title or description when refusing', async () => {
     stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -182,7 +175,7 @@ describe('create_gist', () => {
 
   it('creates the public gist on the second call with the token', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const args = {
       files: [{ filename: 'a.txt', content: 'A' }],
       visibility: 'public',
@@ -193,7 +186,7 @@ describe('create_gist', () => {
     })) as CallToolResult;
     const result = (await client.callTool({
       name: 'create_gist',
-      arguments: { ...args, confirm_token: tokenFrom(refusal) },
+      arguments: { ...args, confirm_token: tokenOf(refusal) },
     })) as CallToolResult;
     expect(result.isError).toBeFalsy();
     expect(calls).toHaveLength(1);
@@ -202,7 +195,7 @@ describe('create_gist', () => {
 
   it('never needs a token for a private gist', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -216,7 +209,7 @@ describe('create_gist', () => {
 
   it('cannot replay a token for different content', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -231,7 +224,7 @@ describe('create_gist', () => {
       arguments: {
         files: [{ filename: 'a.txt', content: 'the private key is ...' }],
         visibility: 'public',
-        confirm_token: tokenFrom(refusal),
+        confirm_token: tokenOf(refusal),
       },
     })) as CallToolResult;
     expect(result.isError).toBe(true);
@@ -240,7 +233,7 @@ describe('create_gist', () => {
 
   it('cannot replay a token for a second file smuggled in', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -256,7 +249,7 @@ describe('create_gist', () => {
           { filename: 'secrets.env', content: 'TOKEN=...' },
         ],
         visibility: 'public',
-        confirm_token: tokenFrom(refusal),
+        confirm_token: tokenOf(refusal),
       },
     })) as CallToolResult;
     expect(result.isError).toBe(true);
@@ -265,7 +258,7 @@ describe('create_gist', () => {
 
   it('cannot reuse a token a second time', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture(), 201));
-    const client = await connectClient();
+    const client = await connect();
     const args = {
       files: [{ filename: 'a.txt', content: 'A' }],
       visibility: 'public',
@@ -274,7 +267,7 @@ describe('create_gist', () => {
       name: 'create_gist',
       arguments: args,
     })) as CallToolResult;
-    const token = tokenFrom(refusal);
+    const token = tokenOf(refusal);
     await client.callTool({
       name: 'create_gist',
       arguments: { ...args, confirm_token: token },
@@ -302,7 +295,7 @@ describe('update_gist', () => {
 
   it('writes a file and reports what was left untouched', async () => {
     const calls = stubFetch(() => jsonResponse(twoFiles));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'update_gist',
       arguments: {
@@ -327,7 +320,7 @@ describe('update_gist', () => {
 
   it('renames a file, optionally with new content', async () => {
     const calls = stubFetch(() => jsonResponse(twoFiles));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'update_gist',
       arguments: {
@@ -350,7 +343,7 @@ describe('update_gist', () => {
 
   it('never emits a null or empty file entry', async () => {
     const calls = stubFetch(() => jsonResponse(twoFiles));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'update_gist',
       arguments: {
@@ -372,7 +365,7 @@ describe('update_gist', () => {
 
   it('refuses a write to an unknown file and names the near match', async () => {
     const calls = stubFetch(() => jsonResponse(twoFiles));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'update_gist',
       arguments: {
@@ -388,7 +381,7 @@ describe('update_gist', () => {
 
   it('adds a new file when allowCreate is set', async () => {
     const calls = stubFetch(() => jsonResponse(twoFiles));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'update_gist',
       arguments: {
@@ -405,7 +398,7 @@ describe('update_gist', () => {
 
   it('rejects two operations on the same file', async () => {
     stubFetch(() => jsonResponse(twoFiles));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'update_gist',
       arguments: {
@@ -422,7 +415,7 @@ describe('update_gist', () => {
 
   it('rejects a rename that would collide with an existing file', async () => {
     stubFetch(() => jsonResponse(twoFiles));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'update_gist',
       arguments: {
@@ -440,7 +433,7 @@ describe('update_gist', () => {
     const calls = stubFetch(() =>
       jsonResponse(gistFixture({ archived: true }))
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'update_gist',
       arguments: { gistId: 'abc123', title: 'x' },
@@ -452,7 +445,7 @@ describe('update_gist', () => {
 
   it('refuses an empty change set', async () => {
     const calls = stubFetch(() => jsonResponse(twoFiles));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'update_gist',
       arguments: { gistId: 'abc123' },
@@ -466,7 +459,7 @@ describe('update_gist', () => {
     const calls = stubFetch(() =>
       jsonResponse(gistFixture({ visibility: 'private' }))
     );
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'update_gist',
       arguments: { gistId: 'abc123', visibility: 'public' },
@@ -482,7 +475,7 @@ describe('update_gist', () => {
       arguments: {
         gistId: 'abc123',
         visibility: 'public',
-        confirm_token: tokenFrom(refusal),
+        confirm_token: tokenOf(refusal),
       },
     })) as CallToolResult;
     expect(confirmed.isError).toBeFalsy();
@@ -499,7 +492,7 @@ describe('update_gist', () => {
         })
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'update_gist',
       arguments: { gistId: 'abc123', visibility: 'public' },
@@ -513,7 +506,7 @@ describe('update_gist', () => {
       files: { 'a.txt': { filename: 'a.txt', content: 'old' } },
     });
     const calls = stubFetch(() => jsonResponse(publicGist));
-    const client = await connectClient();
+    const client = await connect();
     const args = {
       gistId: 'abc123',
       fileOps: [{ op: 'write', filename: 'a.txt', content: 'secret' }],
@@ -533,7 +526,7 @@ describe('update_gist', () => {
 
     const confirmed = (await client.callTool({
       name: 'update_gist',
-      arguments: { ...args, confirm_token: tokenFrom(refusal) },
+      arguments: { ...args, confirm_token: tokenOf(refusal) },
     })) as CallToolResult;
     expect(confirmed.isError).toBeFalsy();
     expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(true);
@@ -548,7 +541,7 @@ describe('update_gist', () => {
         })
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'update_gist',
       arguments: {
@@ -568,7 +561,7 @@ describe('update_gist', () => {
         })
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'update_gist',
       arguments: {
@@ -592,7 +585,7 @@ describe('update_gist', () => {
         })
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'update_gist',
       arguments: {
@@ -610,7 +603,7 @@ describe('update_gist', () => {
     const calls = stubFetch(() =>
       jsonResponse(gistFixture({ visibility: 'public' }))
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'update_gist',
       arguments: { gistId: 'abc123', visibility: 'private' },
@@ -631,7 +624,7 @@ describe('delete_gist_files', () => {
 
   it('requires confirmation and then sends null entries', async () => {
     const calls = stubFetch(() => jsonResponse(threeFiles));
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'delete_gist_files',
       arguments: { gistId: 'abc123', filenames: ['a.txt'] },
@@ -647,7 +640,7 @@ describe('delete_gist_files', () => {
       arguments: {
         gistId: 'abc123',
         filenames: ['a.txt'],
-        confirm_token: tokenFrom(refusal),
+        confirm_token: tokenOf(refusal),
       },
     })) as CallToolResult;
     expect(confirmed.isError).toBeFalsy();
@@ -657,7 +650,7 @@ describe('delete_gist_files', () => {
 
   it('binds the token to the exact file set', async () => {
     const calls = stubFetch(() => jsonResponse(threeFiles));
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'delete_gist_files',
       arguments: { gistId: 'abc123', filenames: ['a.txt'] },
@@ -668,7 +661,7 @@ describe('delete_gist_files', () => {
       arguments: {
         gistId: 'abc123',
         filenames: ['a.txt', 'secrets.env'],
-        confirm_token: tokenFrom(refusal),
+        confirm_token: tokenOf(refusal),
       },
     })) as CallToolResult;
     expect(widened.isError).toBe(true);
@@ -677,7 +670,7 @@ describe('delete_gist_files', () => {
 
   it('rejects a token issued for another gist', async () => {
     const calls = stubFetch(() => jsonResponse(threeFiles));
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'delete_gist_files',
       arguments: { gistId: 'abc123', filenames: ['a.txt'] },
@@ -688,7 +681,7 @@ describe('delete_gist_files', () => {
       arguments: {
         gistId: 'zzz999',
         filenames: ['a.txt'],
-        confirm_token: tokenFrom(refusal),
+        confirm_token: tokenOf(refusal),
       },
     })) as CallToolResult;
     expect(other.isError).toBe(true);
@@ -697,7 +690,7 @@ describe('delete_gist_files', () => {
 
   it('refuses unknown filenames', async () => {
     const calls = stubFetch(() => jsonResponse(threeFiles));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'delete_gist_files',
       arguments: { gistId: 'abc123', filenames: ['nope.txt'] },
@@ -715,7 +708,7 @@ describe('delete_gist_files', () => {
 
   it('refuses to remove every file', async () => {
     stubFetch(() => jsonResponse(threeFiles));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'delete_gist_files',
       arguments: {
@@ -739,7 +732,7 @@ describe('delete_gist_files', () => {
         })
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'delete_gist_files',
       arguments: { gistId: 'abc123', filenames: ['a.txt'] },
@@ -760,7 +753,7 @@ describe('delete_gist', () => {
         })
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'delete_gist',
       arguments: { gistId: 'abc123' },
@@ -778,7 +771,7 @@ describe('delete_gist', () => {
 
   it('rejects a guessed token', async () => {
     const calls = stubFetch(() => jsonResponse(gistFixture()));
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'delete_gist',
       arguments: { gistId: 'abc123' },
@@ -797,14 +790,14 @@ describe('delete_gist', () => {
         ? jsonResponse(null, 204)
         : jsonResponse(gistFixture())
     );
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'delete_gist',
       arguments: { gistId: 'abc123' },
     })) as CallToolResult;
     const result = (await client.callTool({
       name: 'delete_gist',
-      arguments: { gistId: 'abc123', confirm_token: tokenFrom(refusal) },
+      arguments: { gistId: 'abc123', confirm_token: tokenOf(refusal) },
     })) as CallToolResult;
 
     expect(resultJson(result)).toEqual({ deleted: true, gistId: 'abc123' });
@@ -819,12 +812,12 @@ describe('delete_gist', () => {
         ? jsonResponse(null, 204)
         : jsonResponse(gistFixture())
     );
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'delete_gist',
       arguments: { gistId: 'abc123' },
     })) as CallToolResult;
-    const token = tokenFrom(refusal);
+    const token = tokenOf(refusal);
     await client.callTool({
       name: 'delete_gist',
       arguments: { gistId: 'abc123', confirm_token: token },
@@ -845,12 +838,12 @@ describe('delete_gist', () => {
         ? jsonResponse(null, 204)
         : jsonResponse(gistFixture())
     );
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'delete_gist',
       arguments: { gistId: 'abc123' },
     })) as CallToolResult;
-    const token = tokenFrom(refusal);
+    const token = tokenOf(refusal);
 
     vi.advanceTimersByTime(6 * 60 * 1000);
     const result = (await client.callTool({
@@ -868,14 +861,14 @@ describe('delete_gist', () => {
         ? jsonResponse(null, 204)
         : jsonResponse(gistFixture())
     );
-    const client = await connectClient();
+    const client = await connect();
     const refusal = (await client.callTool({
       name: 'delete_gist',
       arguments: { gistId: 'abc123' },
     })) as CallToolResult;
     const result = (await client.callTool({
       name: 'delete_gist',
-      arguments: { gistId: 'other99', confirm_token: tokenFrom(refusal) },
+      arguments: { gistId: 'other99', confirm_token: tokenOf(refusal) },
     })) as CallToolResult;
 
     expect(result.isError).toBe(true);
@@ -886,7 +879,7 @@ describe('delete_gist', () => {
 describe('fork_gist', () => {
   it('reports a newly created fork', async () => {
     stubFetch(() => jsonResponse(gistFixture({ id: 'fork1' }), 201));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'fork_gist',
       arguments: { gistId: 'abc123' },
@@ -896,7 +889,7 @@ describe('fork_gist', () => {
 
   it('reports an existing fork when the API answers 200', async () => {
     stubFetch(() => jsonResponse(gistFixture({ id: 'fork1' }), 200));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'fork_gist',
       arguments: { gistId: 'abc123' },
@@ -953,7 +946,7 @@ describe('approval through the client', () => {
     '%s asks the user, and goes ahead once they accept',
     async (name, args, method) => {
       const calls = stubFetch(() => jsonResponse(twoFileGist()));
-      const client = await connectClient({}, 'accept');
+      const client = await connect({}, 'accept');
       const result = (await client.callTool({
         name,
         arguments: args,
@@ -968,7 +961,7 @@ describe('approval through the client', () => {
     '%s does nothing when declined',
     async (name, args, method) => {
       const calls = stubFetch(() => jsonResponse(twoFileGist()));
-      const client = await connectClient({}, 'decline');
+      const client = await connect({}, 'decline');
       const result = (await client.callTool({
         name,
         arguments: args,
@@ -983,7 +976,7 @@ describe('approval through the client', () => {
     '%s does nothing when the dialog is cancelled',
     async (name, args, method) => {
       const calls = stubFetch(() => jsonResponse(twoFileGist()));
-      const client = await connectClient({}, 'cancel');
+      const client = await connect({}, 'cancel');
       const result = (await client.callTool({
         name,
         arguments: args,
@@ -997,7 +990,7 @@ describe('approval through the client', () => {
     '%s refuses a token it never issued',
     async (name, args, method) => {
       const calls = stubFetch(() => jsonResponse(twoFileGist()));
-      const client = await connectClient();
+      const client = await connect();
       const result = (await client.callTool({
         name,
         arguments: {
@@ -1016,7 +1009,7 @@ describe('approval through the client', () => {
     // fails: the others would still pass, because accepting a dialog and
     // quoting a token back are indistinguishable from the outside.
     stubFetch(() => jsonResponse(twoFileGist()));
-    const client = await connectClient({}, 'accept');
+    const client = await connect({}, 'accept');
     const result = (await client.callTool({
       name: 'delete_gist',
       arguments: { gistId: 'abc123' },
@@ -1029,7 +1022,7 @@ describe('approval through the client', () => {
     // The fallback is not a leftover: it is the only gate a client without
     // elicitation has, and it must keep working unchanged.
     stubFetch(() => jsonResponse(twoFileGist()));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'delete_gist',
       arguments: { gistId: 'abc123' },

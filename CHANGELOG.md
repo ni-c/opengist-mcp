@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- #region changelog -->
 
+## [Unreleased]
+
+### Added
+
+- Tools that need a confirmation now **ask the user**, on clients that can show
+  a prompt. The two-call token remains for clients that cannot, so nothing that
+  works today stops working — but where a person can be asked, one is, instead
+  of a token that only proves the same call was made twice. This covers all four
+  guarded tools: `create_gist`, `update_gist`, `delete_gist_files` and
+  `delete_gist`.
+
+### Changed
+
+- **BREAKING:** the confirmation parameter is now `confirm_token`, not
+  `confirmToken`. A caller that sends the old name is told the argument is
+  unknown. This server names every parameter in camelCase, so the old spelling
+  fitted its neighbours — but the confirmation parameter belongs to the family
+  rather than to Opengist, and the prompt text now comes from `mcp-approval`,
+  which names it `confirm_token` verbatim. A schema spelling it differently
+  would hand the model an instruction its own schema rejects.
+
+- The confirmation prompt is a **plain result rather than an error**. Asking a
+  question is not a failure, and the rest of the family answers it this way.
+
+- A `confirm_token` that does not match its arguments is **refused with the
+  reason** instead of being answered with a fresh prompt. The binding is
+  unchanged: a confirmation issued for one gist still cannot delete another.
+
+- `delete_gist` fetches the gist on every call rather than only when building a
+  prompt, so the counts shown are the same whichever way the answer arrives —
+  and the gist is confirmed to still exist before it is destroyed.
+
+- Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they
+  always did; the change is the package layout behind it, and it is what lets
+  the dialog above work on both protocol eras from one code path — including
+  behind a stateless gateway, where the older mechanism silently fell back to
+  the weaker token for every client.
+
+- The linter is **oxlint** instead of eslint plus typescript-eslint, which lifts
+  the TypeScript ceiling: typescript-eslint pins `typescript` below 6.1, so this
+  repository was held on TypeScript 6 by its linter rather than by its code.
+
+- The tool filter, the confirmation store, the host classifier and the
+  documentation-asset generator now come from **`mcp-tool-allowlist`**,
+  **`mcp-approval`**, **`mcp-internal-hosts`** and **`svg-asset-set`** rather
+  than from copies kept here — 652 fewer lines, and one place to fix each. None
+  of them has a runtime dependency of its own.
+
+### Fixed
+
+- Confirmation tokens are compared with a **constant-time** comparison. The copy
+  in this repository used `!==`, which leaks through timing how much of a guess
+  was right. Reaching a token still requires having received it in a previous
+  tool result, so this closes a margin rather than a hole.
+
+- An entry in `OPENGIST_ALLOW_TOOLS` that is not tool-name-shaped is now
+  **redacted** in the error rather than quoted back. `OPENGIST_TOKEN` and
+  `OPENGIST_ALLOW_TOOLS` are adjacent lines in every compose file, and a paste
+  into the wrong one used to print the credential into the client's log.
+
 ## [0.3.0] - 2026-08-27
 
 ### Added

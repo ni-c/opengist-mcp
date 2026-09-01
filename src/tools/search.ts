@@ -15,6 +15,7 @@ import {
 } from '../shape.js';
 
 import type { OpengistApi } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { parsePagination } from '../pagination.js';
 import { jsonResult, run } from '../result.js';
 import { listPath } from './gists.js';
@@ -94,7 +95,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
             `Pages of ${SCAN_PER_PAGE} gists to scan at most (1-${MAX_PAGES})`
           ),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({
       query,

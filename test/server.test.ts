@@ -67,7 +67,48 @@ describe('tool registration', () => {
     expect(byName.get('fork_gist')?.annotations?.idempotentHint).toBe(true);
     expect(byName.get('set_gist_like')?.annotations?.idempotentHint).toBe(true);
     expect(byName.get('update_gist')?.annotations?.idempotentHint).toBe(true);
-    expect(byName.get('create_gist')?.annotations?.destructiveHint).toBeFalsy();
+    // Was toBeFalsy, which passed while the field was absent — and absent
+    // means destructive, so the assertion said the opposite of what it read.
+    expect(byName.get('create_gist')?.annotations?.destructiveHint).toBe(false);
+  });
+
+  it('declares all four annotation hints on every tool', async () => {
+    // Not a style rule. Two of the four default to a *stronger* claim than
+    // silence suggests: the specification gives destructiveHint and
+    // openWorldHint a default of true, so a tool that omits them announces
+    // itself as destructive and open-world.
+    const client = await connectClient();
+    const { tools } = await client.listTools();
+    const hints = [
+      'readOnlyHint',
+      'destructiveHint',
+      'idempotentHint',
+      'openWorldHint',
+    ] as const;
+    for (const tool of tools) {
+      for (const hint of hints) {
+        expect(typeof tool.annotations?.[hint], `${tool.name}.${hint}`).toBe(
+          'boolean'
+        );
+      }
+    }
+  });
+
+  it('does not confuse publishing with destroying', async () => {
+    // create_gist and update_gist are guarded when they publish, and that is
+    // a disclosure risk: content read by somebody cannot be unread, but
+    // nothing is lost. No annotation carries that, so create_gist stays
+    // additive. update_gist is destructive for the separate reason that a
+    // file operation replaces what the gist serves now.
+    const client = await connectClient();
+    const { tools } = await client.listTools();
+    const byName = new Map(tools.map((t) => [t.name, t.annotations]));
+    expect(byName.get('create_gist')?.destructiveHint).toBe(false);
+    expect(byName.get('fork_gist')?.destructiveHint).toBe(false);
+    expect(byName.get('set_gist_like')?.destructiveHint).toBe(false);
+    expect(byName.get('update_gist')?.destructiveHint).toBe(true);
+    expect(byName.get('delete_gist')?.destructiveHint).toBe(true);
+    expect(byName.get('delete_gist_files')?.destructiveHint).toBe(true);
   });
 });
 

@@ -28,6 +28,7 @@ import {
 } from '../shape.js';
 
 import type { OpengistApi } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { parsePagination, paginationNotes } from '../pagination.js';
 import { jsonResult, run, ToolInputError } from '../result.js';
 
@@ -102,7 +103,7 @@ export function registerGistReadTools(
         page,
         perPage,
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ scope, username: user, since, page, perPage }) =>
       run(async () => {
@@ -186,7 +187,7 @@ export function registerGistReadTools(
           .default(false)
           .describe('Include the git clone and ssh URLs (default false)'),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ gistId: id, sha: revision, ...options }) =>
       run(async () => {
@@ -233,7 +234,7 @@ export function registerGistReadTools(
           .default(100_000)
           .describe('Maximum number of characters to return'),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ gistId: id, filename: name, sha: revision, offset, maxBytes }) =>
       run(async () => {
@@ -288,7 +289,7 @@ export function registerGistReadTools(
       description:
         'List the commit history of a gist, most recent first. Use a commit SHA from here with get_gist or get_gist_file to read an older revision.',
       inputSchema: z.object({ gistId, page, perPage }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ gistId: id, page, perPage }) =>
       run(async () => {
@@ -324,7 +325,7 @@ export function registerGistReadTools(
       title: 'List the forks of a gist',
       description: 'List the gists that were forked from the given gist.',
       inputSchema: z.object({ gistId, page, perPage }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ gistId: id, page, perPage }) =>
       run(async () => {

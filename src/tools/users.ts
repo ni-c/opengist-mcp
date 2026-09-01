@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
 import { OpengistApiError, type OpengistApi } from '../api.js';
+import { READ_ONLY } from './annotations.js';
 import { jsonResult, run, ToolInputError } from '../result.js';
 import { gistId, gistPath, username } from '../schema.js';
 import { shapeUserDetail, type RawUser } from '../shape.js';
@@ -51,7 +52,7 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
           .optional()
           .describe('Look up this numeric user ID instead of the token owner'),
       }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ username: name, userId }) =>
       run(async () => {
@@ -101,7 +102,7 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
       description:
         'Report whether the token owner has liked the given gist. Also distinguishes "not liked" from "not visible to you".',
       inputSchema: z.object({ gistId }),
-      annotations: { readOnlyHint: true },
+      annotations: READ_ONLY,
     },
     ({ gistId: id }) =>
       run(async () => {
@@ -136,7 +137,13 @@ export function registerLikeWriteTools(
           .boolean()
           .describe('true to like the gist, false to remove the like'),
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // A marker.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ gistId: id, liked }) =>
       run(async () => {

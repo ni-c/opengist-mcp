@@ -114,7 +114,15 @@ export function registerGistWriteTools(
             'Delete the gist automatically at this RFC 3339 timestamp. Mutually exclusive with expire.'
           ),
       }),
-      annotations: {},
+      annotations: {
+        // Additive, and guarded anyway when it publishes — that risk is
+        // disclosure, not destruction, and no annotation carries it. Not
+        // idempotent: each call makes another gist.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     (
       {
@@ -299,7 +307,15 @@ export function registerGistWriteTools(
             'Only needed when widening the visibility. Omit on the first call; the refusal returns the token.'
           ),
       }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // Destructive: a file operation replaces content in the current
+        // revision. Earlier revisions stay in git, but what the gist serves
+        // now is gone. Guarded additionally when the call publishes.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     (
       {
@@ -484,7 +500,14 @@ export function registerGistWriteTools(
             'Confirmation token from a previous delete_gist_files call for the same gist and the same files. Omit on the first call.'
           ),
       }),
-      annotations: { destructiveHint: true },
+      annotations: {
+        // Gone from the current revision; recoverable only through get_gist
+        // with an earlier sha.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ gistId: id, filenames, confirm_token }, mcp) =>
       run(async () => {
@@ -576,7 +599,15 @@ export function registerGistWriteTools(
             'Confirmation token from a previous delete_gist call for the same gist. Omit on the first call.'
           ),
       }),
-      annotations: { destructiveHint: true },
+      annotations: {
+        // Idempotent by the specification's wording — the second call fails,
+        // but the world is the same either way. The git repository with every
+        // revision is destroyed.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ gistId: id, confirm_token }, mcp) =>
       run(async () => {
@@ -630,7 +661,15 @@ export function registerGistWriteTools(
       description:
         "Fork somebody else's gist into your own account. Forking a gist you already forked returns the existing fork instead of creating a second one.",
       inputSchema: z.object({ gistId }),
-      annotations: { idempotentHint: true },
+      annotations: {
+        // Additive: it copies a gist under this account and touches the
+        // original not at all. Opengist returns the existing fork rather than
+        // making a second, which is what makes it idempotent.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
     ({ gistId: id }) =>
       run(async () => {

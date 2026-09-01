@@ -5,8 +5,7 @@ updates:
     schedule:
       interval: weekly
     groups:
-      # Keep lockstep packages together so major bumps don't arrive as
-      # individually broken PRs.
+      # Lockstep packages: bumped separately they arrive as individually broken PRs.
       vitest:
         patterns:
           - vitest
@@ -16,41 +15,51 @@ updates:
           - eslint
           - '@eslint/*'
           - typescript-eslint
+      # The catch-all has to repeat the patterns above as exclude-patterns.
+      # Dependabot documents the first matching group as the winner and does not
+      # behave that way (dependabot-core#9765, #14143): on 2026-08-27 it put
+      # `vitest` in the vitest group and `@vitest/coverage-v8` in this one, and
+      # the resulting half-update leaves a lockfile whose `npm ci` dies with
+      # "Cannot read properties of null (reading 'edgesOut')".
       minor-and-patch:
+        exclude-patterns:
+          - vitest
+          - '@vitest/*'
+          - eslint
+          - '@eslint/*'
+          - typescript-eslint
         update-types:
           - minor
           - patch
-
     ignore:
-      # typescript-eslint's peer range gates the TypeScript major: as of 8.67.0 it
-      # declares typescript ">=4.8.4 <6.1.0", so TS 7 cannot be installed here at
-      # all — npm aborts with ERESOLVE. Stated here rather than left as the
-      # "@dependabot ignore this major version" comment on the closed PR #1,
-      # because that lives in GitHub's per-PR state while the reason belongs next
-      # to the constraint. Unignore once that peer range moves.
+      # typescript-eslint declares `typescript ">=4.8.4 <6.1.0"` as its peer, so
+      # TypeScript 7 does not install here at all — `npm install` aborts with
+      # ERESOLVE. Offering the major would be a weekly PR that can only be closed.
+      # Revisit when typescript-eslint widens the range.
       - dependency-name: typescript
         update-types:
           - version-update:semver-major
 
-  # The docs site has its own manifest and lockfile on purpose — the VitePress
-  # toolchain must never enter the root one, which is installed in the Docker
-  # build and in every test-matrix job.
+  # The documentation site has its own manifest so its toolchain never lands in the
+  # runtime image or the test matrix.
   - package-ecosystem: npm
     directory: /docs
     schedule:
       interval: weekly
+    groups:
+      docs:
+        patterns:
+          - '*'
 
-  # The Dockerfile pins its base image by digest, which nothing would ever
-  # refresh without this entry.
+  # Exists so the digest-pinned base image gets refreshed at all. Node majors are
+  # excluded because Dependabot offers whatever tag is newest, while the runtime
+  # image has to sit on an ACTIVE LTS line — and roughly half of all Node majors
+  # never become LTS. Crossing an LTS boundary is a decision, not an update.
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
     ignore:
-      # Node majors are curated by hand: Dependabot offers the newest tag, but
-      # the runtime image has to sit on an ACTIVE LTS line, and half of the
-      # majors are not LTS at all (26 is a current release, 24 is LTS Krypton).
-      # Digest and minor refreshes of the pinned line still come through.
       - dependency-name: node
         update-types:
           - version-update:semver-major

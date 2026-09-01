@@ -29,11 +29,11 @@ Missing credentials do **not** cause an exit.
 That is the marker, not an error. Any response carrying text written by a person gets
 it. See [Security](/guide/security#untrusted-content).
 
-## A tool refused and gave me a `confirmToken`
+## A tool refused and gave me a `confirm_token`
 
 Working as intended. Deleting, publishing and writing into a published gist all
 refuse their first call. Confirm with the user, then call again within five minutes
-with `confirmToken` set and every other argument unchanged.
+with `confirm_token` set and every other argument unchanged.
 
 If the second call is also refused, one of three things happened: more than five
 minutes passed, an argument changed between the calls (the token is bound to the

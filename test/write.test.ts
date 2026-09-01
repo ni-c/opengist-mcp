@@ -18,7 +18,7 @@ afterEach(() => {
 
 /** Extracts the confirmation token out of a refusal message. */
 function tokenFrom(result: CallToolResult): string {
-  const match = /confirmToken: "([0-9a-f]+)"/.exec(resultText(result));
+  const match = /confirm_token: "([0-9a-f]+)"/.exec(resultText(result));
   if (match?.[1] === undefined) {
     throw new Error(`no token in: ${resultText(result)}`);
   }
@@ -187,7 +187,7 @@ describe('create_gist', () => {
     })) as CallToolResult;
     const result = (await client.callTool({
       name: 'create_gist',
-      arguments: { ...args, confirmToken: tokenFrom(refusal) },
+      arguments: { ...args, confirm_token: tokenFrom(refusal) },
     })) as CallToolResult;
     expect(result.isError).toBeFalsy();
     expect(calls).toHaveLength(1);
@@ -225,7 +225,7 @@ describe('create_gist', () => {
       arguments: {
         files: [{ filename: 'a.txt', content: 'the private key is ...' }],
         visibility: 'public',
-        confirmToken: tokenFrom(refusal),
+        confirm_token: tokenFrom(refusal),
       },
     })) as CallToolResult;
     expect(result.isError).toBe(true);
@@ -250,7 +250,7 @@ describe('create_gist', () => {
           { filename: 'secrets.env', content: 'TOKEN=...' },
         ],
         visibility: 'public',
-        confirmToken: tokenFrom(refusal),
+        confirm_token: tokenFrom(refusal),
       },
     })) as CallToolResult;
     expect(result.isError).toBe(true);
@@ -271,11 +271,11 @@ describe('create_gist', () => {
     const token = tokenFrom(refusal);
     await client.callTool({
       name: 'create_gist',
-      arguments: { ...args, confirmToken: token },
+      arguments: { ...args, confirm_token: token },
     });
     const replay = (await client.callTool({
       name: 'create_gist',
-      arguments: { ...args, confirmToken: token },
+      arguments: { ...args, confirm_token: token },
     })) as CallToolResult;
     expect(replay.isError).toBe(true);
     expect(calls).toHaveLength(1);
@@ -473,7 +473,7 @@ describe('update_gist', () => {
       arguments: {
         gistId: 'abc123',
         visibility: 'public',
-        confirmToken: tokenFrom(refusal),
+        confirm_token: tokenFrom(refusal),
       },
     })) as CallToolResult;
     expect(confirmed.isError).toBeFalsy();
@@ -519,7 +519,7 @@ describe('update_gist', () => {
 
     const confirmed = (await client.callTool({
       name: 'update_gist',
-      arguments: { ...args, confirmToken: tokenFrom(refusal) },
+      arguments: { ...args, confirm_token: tokenFrom(refusal) },
     })) as CallToolResult;
     expect(confirmed.isError).toBeFalsy();
     expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(true);
@@ -588,7 +588,7 @@ describe('update_gist', () => {
     })) as CallToolResult;
     expect(result.isError).toBe(true);
     expect(resultText(result)).toContain('allowCreate');
-    expect(resultText(result)).not.toContain('confirmToken');
+    expect(resultText(result)).not.toContain('confirm_token');
     expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
   });
 
@@ -630,7 +630,7 @@ describe('delete_gist_files', () => {
       arguments: {
         gistId: 'abc123',
         filenames: ['a.txt'],
-        confirmToken: tokenFrom(refusal),
+        confirm_token: tokenFrom(refusal),
       },
     })) as CallToolResult;
     expect(confirmed.isError).toBeFalsy();
@@ -651,7 +651,7 @@ describe('delete_gist_files', () => {
       arguments: {
         gistId: 'abc123',
         filenames: ['a.txt', 'secrets.env'],
-        confirmToken: tokenFrom(refusal),
+        confirm_token: tokenFrom(refusal),
       },
     })) as CallToolResult;
     expect(widened.isError).toBe(true);
@@ -671,7 +671,7 @@ describe('delete_gist_files', () => {
       arguments: {
         gistId: 'zzz999',
         filenames: ['a.txt'],
-        confirmToken: tokenFrom(refusal),
+        confirm_token: tokenFrom(refusal),
       },
     })) as CallToolResult;
     expect(other.isError).toBe(true);
@@ -765,7 +765,7 @@ describe('delete_gist', () => {
     });
     const result = (await client.callTool({
       name: 'delete_gist',
-      arguments: { gistId: 'abc123', confirmToken: 'deadbeef' },
+      arguments: { gistId: 'abc123', confirm_token: 'deadbeef' },
     })) as CallToolResult;
     expect(result.isError).toBe(true);
     expect(calls.some((c) => c.init?.method === 'DELETE')).toBe(false);
@@ -784,7 +784,7 @@ describe('delete_gist', () => {
     })) as CallToolResult;
     const result = (await client.callTool({
       name: 'delete_gist',
-      arguments: { gistId: 'abc123', confirmToken: tokenFrom(refusal) },
+      arguments: { gistId: 'abc123', confirm_token: tokenFrom(refusal) },
     })) as CallToolResult;
 
     expect(resultJson(result)).toEqual({ deleted: true, gistId: 'abc123' });
@@ -807,11 +807,11 @@ describe('delete_gist', () => {
     const token = tokenFrom(refusal);
     await client.callTool({
       name: 'delete_gist',
-      arguments: { gistId: 'abc123', confirmToken: token },
+      arguments: { gistId: 'abc123', confirm_token: token },
     });
     const reuse = (await client.callTool({
       name: 'delete_gist',
-      arguments: { gistId: 'abc123', confirmToken: token },
+      arguments: { gistId: 'abc123', confirm_token: token },
     })) as CallToolResult;
 
     expect(reuse.isError).toBe(true);
@@ -835,7 +835,7 @@ describe('delete_gist', () => {
     vi.advanceTimersByTime(6 * 60 * 1000);
     const result = (await client.callTool({
       name: 'delete_gist',
-      arguments: { gistId: 'abc123', confirmToken: token },
+      arguments: { gistId: 'abc123', confirm_token: token },
     })) as CallToolResult;
 
     expect(result.isError).toBe(true);
@@ -855,7 +855,7 @@ describe('delete_gist', () => {
     })) as CallToolResult;
     const result = (await client.callTool({
       name: 'delete_gist',
-      arguments: { gistId: 'other99', confirmToken: tokenFrom(refusal) },
+      arguments: { gistId: 'other99', confirm_token: tokenFrom(refusal) },
     })) as CallToolResult;
 
     expect(result.isError).toBe(true);

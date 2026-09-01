@@ -66,7 +66,7 @@ export function registerGistWriteTools(
       description:
         'Create a new gist from one or more files. Topics cannot be set through the API. ' +
         'Expiry can only be set here, never changed afterwards. ' +
-        'visibility "public" or "unlisted" publishes the content and therefore needs a confirmToken: ' +
+        'visibility "public" or "unlisted" publishes the content and therefore needs a confirm_token: ' +
         'the first call is refused and returns one. Use "private" unless the user asked for otherwise.',
       inputSchema: z.object({
         files: z
@@ -94,7 +94,7 @@ export function registerGistWriteTools(
           .optional()
           .describe('Title of the gist; defaults to the first filename'),
         description: z.string().max(1000).optional(),
-        confirmToken: z
+        confirm_token: z
           .string()
           .optional()
           .describe(
@@ -122,7 +122,7 @@ export function registerGistWriteTools(
       description,
       expire,
       expiresAt,
-      confirmToken,
+      confirm_token,
     }) =>
       run(async () => {
         if (expire !== undefined && expiresAt !== undefined) {
@@ -168,7 +168,7 @@ export function registerGistWriteTools(
             expire: expire ?? null,
             expiresAt: expiresAt ?? null,
           })}`;
-          if (!confirmations.consume(resource, confirmToken)) {
+          if (!confirmations.consume(resource, confirm_token)) {
             const token = confirmations.issue(resource);
             const bytes = files.reduce(
               (total, file) => total + Buffer.byteLength(file.content, 'utf8'),
@@ -180,7 +180,7 @@ export function registerGistWriteTools(
             return errorResult(
               `Creating a ${visibility} gist publishes its content: ${visibility === 'public' ? 'it is listed on the instance and readable by anyone' : 'anyone with the URL can read it, and the URL may be shared onward'}. ` +
                 `This call would write ${files.length} file(s), ${bytes} byte(s) in total. Filenames, title and description are withheld here on purpose (they are supplied by the caller, not by the server) — check them in the arguments you are about to send. ` +
-                `Confirm with the user that this content may become world-readable, then call create_gist again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}" and otherwise identical arguments. Use visibility "private" if in doubt.`
+                `Confirm with the user that this content may become world-readable, then call create_gist again within ${confirmations.ttlMinutes} minutes with confirm_token: "${token}" and otherwise identical arguments. Use visibility "private" if in doubt.`
             );
           }
         }
@@ -216,7 +216,7 @@ export function registerGistWriteTools(
         'Change the metadata of a gist and/or write and rename files. ' +
         'Files you do not list are left untouched — never list a file just to preserve it. ' +
         'This tool can never delete a file; use delete_gist_files for that. ' +
-        'Widening the visibility (private → unlisted/public, unlisted → public) discloses the gist and therefore needs a confirmToken, ' +
+        'Widening the visibility (private → unlisted/public, unlisted → public) discloses the gist and therefore needs a confirm_token, ' +
         'as does writing files into a gist that is already public or unlisted. Narrowing the visibility does not.',
       inputSchema: z.object({
         gistId,
@@ -262,7 +262,7 @@ export function registerGistWriteTools(
           .describe(
             'Allow a write operation to add a file that does not exist yet. Off by default so a typo in a filename cannot silently create a duplicate file.'
           ),
-        confirmToken: z
+        confirm_token: z
           .string()
           .optional()
           .describe(
@@ -278,7 +278,7 @@ export function registerGistWriteTools(
       visibility: newVisibility,
       fileOps,
       allowCreate,
-      confirmToken,
+      confirm_token,
     }) =>
       run(async () => {
         if (
@@ -337,7 +337,7 @@ export function registerGistWriteTools(
               ) ?? null,
           });
           const resource = `gist:${id}:update:${effective}:${effectFingerprint}`;
-          if (!confirmations.consume(resource, confirmToken)) {
+          if (!confirmations.consume(resource, confirm_token)) {
             const token = confirmations.issue(resource);
             const opCount = fileOps === undefined ? 0 : fileOps.length;
             const alsoChanges = [
@@ -356,7 +356,7 @@ export function registerGistWriteTools(
                   : widens
                     ? 'This call changes nothing but the visibility. '
                     : '') +
-                `Confirm with the user, then call update_gist again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}" and otherwise identical arguments — the token only works for exactly this set of changes.`
+                `Confirm with the user, then call update_gist again within ${confirmations.ttlMinutes} minutes with confirm_token: "${token}" and otherwise identical arguments — the token only works for exactly this set of changes.`
             );
           }
         }
@@ -416,7 +416,7 @@ export function registerGistWriteTools(
       title: 'Delete files from a gist',
       description:
         'Delete one or more files from a gist. The files disappear from the current revision; older revisions keep them in the git history. ' +
-        'The first call returns a short-lived confirmation token bound to exactly these filenames; ask the user, then call again with confirmToken.',
+        'The first call returns a short-lived confirmation token bound to exactly these filenames; ask the user, then call again with confirm_token.',
       inputSchema: z.object({
         gistId,
         filenames: z
@@ -424,7 +424,7 @@ export function registerGistWriteTools(
           .min(1)
           .max(50)
           .describe('The files to delete'),
-        confirmToken: z
+        confirm_token: z
           .string()
           .optional()
           .describe(
@@ -433,7 +433,7 @@ export function registerGistWriteTools(
       }),
       annotations: { destructiveHint: true },
     },
-    ({ gistId: id, filenames, confirmToken }) =>
+    ({ gistId: id, filenames, confirm_token }) =>
       run(async () => {
         const sorted = [...new Set(filenames)].sort();
         // Binding the token to the file set stops a confirmation for one file
@@ -460,7 +460,7 @@ export function registerGistWriteTools(
           );
         }
 
-        if (!confirmations.consume(resource, confirmToken)) {
+        if (!confirmations.consume(resource, confirm_token)) {
           const token = confirmations.issue(resource);
           const previousSha = gist.commits?.[0]?.version;
           // The filenames are deliberately NOT quoted back here. They are
@@ -471,7 +471,7 @@ export function registerGistWriteTools(
           return errorResult(
             `Deleting ${sorted.length} file(s) from gist ${id}, as listed in this call's filenames argument. ` +
               `They will be gone from the current revision${previousSha !== undefined ? ` (recoverable via get_gist with sha="${previousSha}")` : ''}. ` +
-              `Confirm the file list with the user, then call delete_gist_files again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}".`
+              `Confirm the file list with the user, then call delete_gist_files again within ${confirmations.ttlMinutes} minutes with confirm_token: "${token}".`
           );
         }
 
@@ -494,10 +494,10 @@ export function registerGistWriteTools(
       title: 'Delete a gist',
       description:
         'Permanently delete a gist. This is irreversible: the git repository with every revision and the database row are destroyed. ' +
-        'The first call returns a short-lived confirmation token; ask the user for confirmation, then call again with confirmToken.',
+        'The first call returns a short-lived confirmation token; ask the user for confirmation, then call again with confirm_token.',
       inputSchema: z.object({
         gistId,
-        confirmToken: z
+        confirm_token: z
           .string()
           .optional()
           .describe(
@@ -506,10 +506,10 @@ export function registerGistWriteTools(
       }),
       annotations: { destructiveHint: true },
     },
-    ({ gistId: id, confirmToken }) =>
+    ({ gistId: id, confirm_token }) =>
       run(async () => {
         const resource = `gist:${id}:delete`;
-        if (!confirmations.consume(resource, confirmToken)) {
+        if (!confirmations.consume(resource, confirm_token)) {
           // Fails with an API error if the gist does not exist or is invisible.
           const gist = (await api.get(gistPath(id))) as RawGist;
           const token = confirmations.issue(resource);
@@ -521,7 +521,7 @@ export function registerGistWriteTools(
               `Gist: visibility=${gist.visibility}, ${Object.keys(gist.files ?? {}).length} file(s), ` +
               `${gist.fork_count ?? 0} fork(s), ${gist.like_count ?? 0} like(s), created ${gist.created_at}` +
               `${gist.archived ? ', archived' : ''}. Title and description are withheld on purpose (user-supplied text). ` +
-              `Confirm with the user, then call delete_gist again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}".`
+              `Confirm with the user, then call delete_gist again within ${confirmations.ttlMinutes} minutes with confirm_token: "${token}".`
           );
         }
         await api.delete(gistPath(id));

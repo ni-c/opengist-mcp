@@ -6,7 +6,7 @@ import { ALL_TOOLS, ESSENTIAL_TOOLS, READ_TOOLS } from './tools/catalogue.js';
 
 import { OpengistApi } from './api.js';
 import type { Config } from './config.js';
-import { ConfirmationStore } from './confirm.js';
+import { ConfirmationStore, createApproval } from 'mcp-approval';
 import { registerGistReadTools } from './tools/gists.js';
 import { registerGistWriteTools } from './tools/gist-write.js';
 import { registerSearchTools } from './tools/search.js';
@@ -64,7 +64,14 @@ export function createServer(config: Config): McpServer {
   // registered and always failing: an absent tool is visible in tools/list, so
   // the model plans around it instead of retrying against a wall.
   if (!config.readOnly) {
-    registerGistWriteTools(server, api, new ConfirmationStore());
+    // One approver per server: it holds the key that seals the request state
+    // carried out through the client and back.
+    registerGistWriteTools(
+      server,
+      api,
+      new ConfirmationStore(),
+      createApproval({ server: 'opengist-mcp' })
+    );
     registerLikeWriteTools(server, api);
   }
 

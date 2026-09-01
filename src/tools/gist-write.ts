@@ -10,7 +10,7 @@ import {
 } from '../shape.js';
 
 import type { OpengistApi } from '../api.js';
-import type { ConfirmationStore } from '../confirm.js';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
 import { errorResult, jsonResult, run, ToolInputError } from '../result.js';
 import { filename, gistId, gistPath, visibility } from '../schema.js';
 
@@ -57,7 +57,8 @@ async function loadWritableGist(
 export function registerGistWriteTools(
   server: McpServer,
   api: OpengistApi,
-  confirmations: ConfirmationStore
+  confirmations: ConfirmationStore,
+  approval: Approver
 ): void {
   server.registerTool(
     'create_gist',
@@ -115,15 +116,18 @@ export function registerGistWriteTools(
       }),
       annotations: {},
     },
-    ({
-      files,
-      visibility,
-      title,
-      description,
-      expire,
-      expiresAt,
-      confirm_token,
-    }) =>
+    (
+      {
+        files,
+        visibility,
+        title,
+        description,
+        expire,
+        expiresAt,
+        confirm_token,
+      },
+      mcp
+    ) =>
       run(async () => {
         if (expire !== undefined && expiresAt !== undefined) {
           throw new ToolInputError(
@@ -168,21 +172,47 @@ export function registerGistWriteTools(
             expire: expire ?? null,
             expiresAt: expiresAt ?? null,
           })}`;
-          if (!confirmations.consume(resource, confirm_token)) {
-            const token = confirmations.issue(resource);
-            const bytes = files.reduce(
-              (total, file) => total + Buffer.byteLength(file.content, 'utf8'),
-              0
-            );
-            // Only server-side counts are quoted. Filenames, title and
-            // description are caller-supplied text that would land in a
-            // confirmation prompt a model reads back.
-            return errorResult(
-              `Creating a ${visibility} gist publishes its content: ${visibility === 'public' ? 'it is listed on the instance and readable by anyone' : 'anyone with the URL can read it, and the URL may be shared onward'}. ` +
-                `This call would write ${files.length} file(s), ${bytes} byte(s) in total. Filenames, title and description are withheld here on purpose (they are supplied by the caller, not by the server) — check them in the arguments you are about to send. ` +
-                `Confirm with the user that this content may become world-readable, then call create_gist again within ${confirmations.ttlMinutes} minutes with confirm_token: "${token}" and otherwise identical arguments. Use visibility "private" if in doubt.`
-            );
+          const bytes = files.reduce(
+            (total, file) => total + Buffer.byteLength(file.content, 'utf8'),
+            0
+          );
+          // Only server-side counts are quoted. Filenames, title and
+          // description are caller-supplied text that would land in a
+          // confirmation prompt a model reads back.
+          const outcome = await approval.requestApproval(
+            server,
+            mcp,
+            confirmations,
+            {
+              // The counts go in the sentence rather than into `details`: that
+              // block is labelled as caller-supplied, and these are the one
+              // thing here the server counted itself.
+              what: `create a ${visibility} gist of ${files.length} file(s), ${bytes} byte(s) in total`,
+              consequence:
+                visibility === 'public'
+                  ? 'It is listed on the instance and readable by anyone. Content that has been read cannot be withdrawn.'
+                  : 'Anyone with the URL can read it, and the URL may be shared onward. Content that has been read cannot be withdrawn.',
+              fallbackNote:
+                'Filenames, title and description are withheld here on purpose ' +
+                '(they are supplied by the caller, not by the server) — check them ' +
+                'in the arguments you are about to send. Use visibility "private" ' +
+                'if in doubt.',
+              resourceKey: resource,
+              token: confirm_token,
+              toolName: 'create_gist',
+              hint: 'Tick to publish it, leave it to cancel.',
+            }
+          );
+          // A token that was sent and did not match is refused with the reason
+          // rather than answered with a fresh prompt; the sentence is the
+          // library's, so every server refuses in the same words.
+          if (outcome.decision === 'rejected') {
+            return errorResult(outcome.reason);
           }
+          if (outcome.decision === 'declined') {
+            return errorResult('The user declined. No gist was created.');
+          }
+          if (outcome.decision === 'pending') return outcome.result;
         }
 
         const body: Record<string, unknown> = {
@@ -271,15 +301,18 @@ export function registerGistWriteTools(
       }),
       annotations: { idempotentHint: true },
     },
-    ({
-      gistId: id,
-      title,
-      description,
-      visibility: newVisibility,
-      fileOps,
-      allowCreate,
-      confirm_token,
-    }) =>
+    (
+      {
+        gistId: id,
+        title,
+        description,
+        visibility: newVisibility,
+        fileOps,
+        allowCreate,
+        confirm_token,
+      },
+      mcp
+    ) =>
       run(async () => {
         if (
           title === undefined &&
@@ -337,28 +370,48 @@ export function registerGistWriteTools(
               ) ?? null,
           });
           const resource = `gist:${id}:update:${effective}:${effectFingerprint}`;
-          if (!confirmations.consume(resource, confirm_token)) {
-            const token = confirmations.issue(resource);
-            const opCount = fileOps === undefined ? 0 : fileOps.length;
-            const alsoChanges = [
-              title !== undefined && 'the title',
-              description !== undefined && 'the description',
-              opCount > 0 && `${opCount} file operation(s)`,
-            ].filter((v): v is string => Boolean(v));
-            const headline = widens
-              ? `Changing the visibility of gist ${id} from ${current} to ${newVisibility} makes it readable by others and cannot be undone for anyone who already saw it. `
-              : `Gist ${id} is ${current}, so writing to it publishes the new content: ${opCount} file operation(s) whose content becomes readable by others and cannot be withdrawn from anyone who already saw it. `;
-            return errorResult(
-              headline +
-                `The gist has ${Object.keys(gist.files ?? {}).length} file(s). Title, description and filenames are withheld here on purpose (they are user-supplied text). ` +
-                (widens && alsoChanges.length > 0
-                  ? `This same call also changes ${alsoChanges.join(', ')} — confirm those too. `
-                  : widens
-                    ? 'This call changes nothing but the visibility. '
-                    : '') +
-                `Confirm with the user, then call update_gist again within ${confirmations.ttlMinutes} minutes with confirm_token: "${token}" and otherwise identical arguments — the token only works for exactly this set of changes.`
-            );
+          const opCount = fileOps === undefined ? 0 : fileOps.length;
+          const alsoChanges = [
+            title !== undefined && 'the title',
+            description !== undefined && 'the description',
+            opCount > 0 && `${opCount} file operation(s)`,
+          ].filter((v): v is string => Boolean(v));
+          const outcome = await approval.requestApproval(
+            server,
+            mcp,
+            confirmations,
+            {
+              what: widens
+                ? `change the visibility of gist ${id} from ${current} to ${newVisibility}`
+                : `write ${opCount} file operation(s) to gist ${id}, which is ${current}`,
+              consequence: widens
+                ? 'It becomes readable by others, and that cannot be undone for anyone who already saw it.' +
+                  (alsoChanges.length > 0
+                    ? ` The same call also changes ${alsoChanges.join(', ')}.`
+                    : ' The call changes nothing but the visibility.')
+                : 'The new content becomes readable by others and cannot be withdrawn from anyone who already saw it.' +
+                  ` The gist has ${Object.keys(gist.files ?? {}).length} file(s).`,
+              fallbackNote:
+                'Title, description and filenames are withheld here on purpose ' +
+                '(they are user-supplied text). Call again with otherwise ' +
+                'identical arguments — the token only works for exactly this set ' +
+                'of changes.',
+              resourceKey: resource,
+              token: confirm_token,
+              toolName: 'update_gist',
+              hint: 'Tick to go ahead, leave it to cancel.',
+            }
+          );
+          // A token that was sent and did not match is refused with the reason
+          // rather than answered with a fresh prompt; the sentence is the
+          // library's, so every server refuses in the same words.
+          if (outcome.decision === 'rejected') {
+            return errorResult(outcome.reason);
           }
+          if (outcome.decision === 'declined') {
+            return errorResult('The user declined. The gist is unchanged.');
+          }
+          if (outcome.decision === 'pending') return outcome.result;
         }
 
         const body: Record<string, unknown> = {
@@ -433,7 +486,7 @@ export function registerGistWriteTools(
       }),
       annotations: { destructiveHint: true },
     },
-    ({ gistId: id, filenames, confirm_token }) =>
+    ({ gistId: id, filenames, confirm_token }, mcp) =>
       run(async () => {
         const sorted = [...new Set(filenames)].sort();
         // Binding the token to the file set stops a confirmation for one file
@@ -460,20 +513,39 @@ export function registerGistWriteTools(
           );
         }
 
-        if (!confirmations.consume(resource, confirm_token)) {
-          const token = confirmations.issue(resource);
-          const previousSha = gist.commits?.[0]?.version;
-          // The filenames are deliberately NOT quoted back here. They are
-          // caller-supplied and may have been copied out of a foreign gist, so
-          // echoing them would put attacker-chosen text into a confirmation
-          // prompt. The caller already knows which files it asked for, and the
-          // token is bound to that exact set anyway.
-          return errorResult(
-            `Deleting ${sorted.length} file(s) from gist ${id}, as listed in this call's filenames argument. ` +
-              `They will be gone from the current revision${previousSha !== undefined ? ` (recoverable via get_gist with sha="${previousSha}")` : ''}. ` +
-              `Confirm the file list with the user, then call delete_gist_files again within ${confirmations.ttlMinutes} minutes with confirm_token: "${token}".`
-          );
+        const previousSha = gist.commits?.[0]?.version;
+        // The filenames are deliberately NOT quoted back here. They are
+        // caller-supplied and may have been copied out of a foreign gist, so
+        // echoing them would put attacker-chosen text into a confirmation
+        // prompt. The caller already knows which files it asked for, and the
+        // token is bound to that exact set anyway.
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `delete ${sorted.length} file(s) from gist ${id}, as listed in this call's filenames argument`,
+            consequence:
+              'They are gone from the current revision' +
+              (previousSha === undefined
+                ? '.'
+                : `, recoverable only via get_gist with sha="${previousSha}".`),
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'delete_gist_files',
+            hint: 'Tick to delete them, leave it to cancel.',
+          }
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
         }
+        if (outcome.decision === 'declined') {
+          return errorResult('The user declined. No files were deleted.');
+        }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const files = Object.fromEntries(sorted.map((name) => [name, null]));
         const response = await api.patch(gistPath(id), { files });
@@ -506,24 +578,46 @@ export function registerGistWriteTools(
       }),
       annotations: { destructiveHint: true },
     },
-    ({ gistId: id, confirm_token }) =>
+    ({ gistId: id, confirm_token }, mcp) =>
       run(async () => {
         const resource = `gist:${id}:delete`;
-        if (!confirmations.consume(resource, confirm_token)) {
-          // Fails with an API error if the gist does not exist or is invisible.
-          const gist = (await api.get(gistPath(id))) as RawGist;
-          const token = confirmations.issue(resource);
-          // Only server-side metadata is echoed here. Title, description,
-          // topics and filenames are user-supplied text and could carry
-          // instructions aimed at manufacturing a confirmation.
-          return errorResult(
-            `Deleting gist ${id} is irreversible: the git repository with all revisions is destroyed. ` +
+        // Fails with an API error if the gist does not exist or is invisible.
+        // Fetched on every call rather than only on the first: the approval now
+        // renders these counts whichever way the answer arrives, and checking
+        // that the gist is still there before deleting it is worth one GET.
+        const gist = (await api.get(gistPath(id))) as RawGist;
+        // Only server-side metadata is echoed here. Title, description, topics
+        // and filenames are user-supplied text and could carry instructions
+        // aimed at manufacturing a confirmation.
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `delete gist ${id}`,
+            consequence:
+              'The git repository with all revisions is destroyed. This cannot be undone. ' +
               `Gist: visibility=${gist.visibility}, ${Object.keys(gist.files ?? {}).length} file(s), ` +
               `${gist.fork_count ?? 0} fork(s), ${gist.like_count ?? 0} like(s), created ${gist.created_at}` +
-              `${gist.archived ? ', archived' : ''}. Title and description are withheld on purpose (user-supplied text). ` +
-              `Confirm with the user, then call delete_gist again within ${confirmations.ttlMinutes} minutes with confirm_token: "${token}".`
-          );
+              `${gist.archived ? ', archived' : ''}.`,
+            fallbackNote:
+              'Title and description are withheld on purpose (user-supplied text).',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'delete_gist',
+            hint: 'Tick to delete it, leave it to cancel.',
+          }
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
         }
+        if (outcome.decision === 'declined') {
+          return errorResult('The user declined. The gist still exists.');
+        }
+        if (outcome.decision === 'pending') return outcome.result;
         await api.delete(gistPath(id));
         return jsonResult({ deleted: true, gistId: id });
       })

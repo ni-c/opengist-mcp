@@ -80,18 +80,43 @@ export function stubFetch(
   return calls;
 }
 
+/** How a client that can show a dialog answers it. */
+export type ElicitBehaviour = 'accept' | 'decline' | 'cancel';
+
+/**
+ * Connects a client to the real server.
+ *
+ * Without `elicit` the client declares no elicitation capability, which is the
+ * case the two-call token exists for and what every other test drives. With it,
+ * the client answers the dialog and `prompts` records what the server put in
+ * front of the user.
+ */
 export async function connectClient(
-  overrides: Partial<Config> = {}
-): Promise<Client> {
+  overrides: Partial<Config> = {},
+  elicit?: ElicitBehaviour
+): Promise<Client & { prompts: string[] }> {
   const server = createServer({ ...config, ...overrides });
-  const client = new Client({ name: 'test-client', version: '0.0.0' });
+  const prompts: string[] = [];
+  const client = new Client(
+    { name: 'test-client', version: '0.0.0' },
+    elicit === undefined ? {} : { capabilities: { elicitation: {} } }
+  );
+  if (elicit !== undefined) {
+    client.setRequestHandler('elicitation/create', (request) => {
+      const params = request.params as { message?: string };
+      prompts.push(params.message ?? '');
+      if (elicit === 'cancel') return { action: 'cancel' };
+      if (elicit === 'decline') return { action: 'decline' };
+      return { action: 'accept', content: { confirm: true } };
+    });
+  }
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
   await Promise.all([
     server.connect(serverTransport),
     client.connect(clientTransport),
   ]);
-  return client;
+  return Object.assign(client, { prompts });
 }
 
 export function resultText(result: CallToolResult): string {

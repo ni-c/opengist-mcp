@@ -18,7 +18,7 @@ afterEach(() => {
 
 /** Extracts the confirmation token out of a refusal message. */
 function tokenFrom(result: CallToolResult): string {
-  const match = /confirm_token: "([0-9a-f]+)"/.exec(resultText(result));
+  const match = /confirm_token="([0-9a-f]+)"/.exec(resultText(result));
   if (match?.[1] === undefined) {
     throw new Error(`no token in: ${resultText(result)}`);
   }
@@ -136,8 +136,11 @@ describe('create_gist', () => {
         visibility: 'public',
       },
     })) as CallToolResult;
-    expect(result.isError).toBe(true);
-    expect(resultText(result)).toContain('world-readable');
+    // The confirmation prompt is a plain result, not an error: asking a
+    // question is not a failure, and the whole family answers it the same
+    // way since the check moved into mcp-approval.
+    expect(result.isError).toBeFalsy();
+    expect(resultText(result)).toContain('readable by anyone');
     // Nothing was published: the refusal happens before the POST.
     expect(calls).toHaveLength(0);
   });
@@ -152,7 +155,10 @@ describe('create_gist', () => {
         visibility: 'unlisted',
       },
     })) as CallToolResult;
-    expect(result.isError).toBe(true);
+    // The confirmation prompt is a plain result, not an error: asking a
+    // question is not a failure, and the whole family answers it the same
+    // way since the check moved into mcp-approval.
+    expect(result.isError).toBeFalsy();
     expect(calls).toHaveLength(0);
   });
 
@@ -465,7 +471,10 @@ describe('update_gist', () => {
       name: 'update_gist',
       arguments: { gistId: 'abc123', visibility: 'public' },
     })) as CallToolResult;
-    expect(refusal.isError).toBe(true);
+    // The confirmation prompt is a plain result, not an error: asking a
+    // question is not a failure, and the whole family answers it the same
+    // way since the check moved into mcp-approval.
+    expect(refusal.isError).toBeFalsy();
     expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
 
     const confirmed = (await client.callTool({
@@ -513,8 +522,13 @@ describe('update_gist', () => {
       name: 'update_gist',
       arguments: args,
     })) as CallToolResult;
-    expect(refusal.isError).toBe(true);
-    expect(resultText(refusal)).toContain('publishes the new content');
+    // The confirmation prompt is a plain result, not an error: asking a
+    // question is not a failure, and the whole family answers it the same
+    // way since the check moved into mcp-approval.
+    expect(refusal.isError).toBeFalsy();
+    expect(resultText(refusal)).toContain(
+      'becomes readable by others and cannot be withdrawn'
+    );
     expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
 
     const confirmed = (await client.callTool({
@@ -622,7 +636,10 @@ describe('delete_gist_files', () => {
       name: 'delete_gist_files',
       arguments: { gistId: 'abc123', filenames: ['a.txt'] },
     })) as CallToolResult;
-    expect(refusal.isError).toBe(true);
+    // The confirmation prompt is a plain result, not an error: asking a
+    // question is not a failure, and the whole family answers it the same
+    // way since the check moved into mcp-approval.
+    expect(refusal.isError).toBeFalsy();
     expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
 
     const confirmed = (await client.callTool({
@@ -749,7 +766,10 @@ describe('delete_gist', () => {
       arguments: { gistId: 'abc123' },
     })) as CallToolResult;
 
-    expect(refusal.isError).toBe(true);
+    // The confirmation prompt is a plain result, not an error: asking a
+    // question is not a failure, and the whole family answers it the same
+    // way since the check moved into mcp-approval.
+    expect(refusal.isError).toBeFalsy();
     const text = resultText(refusal);
     expect(text).not.toContain('ignore previous instructions');
     expect(text).toContain('visibility=public');
@@ -884,5 +904,136 @@ describe('fork_gist', () => {
     const body = resultJson(result);
     expect(body.created).toBe(false);
     expect(String(body.notes)).toContain('already forked');
+  });
+});
+
+/**
+ * The point of the approval path: a client that can put a question in front of a
+ * person gets asked, instead of a token that only proves the same call was made
+ * twice. Every other test in this file drives the token path, and would pass just
+ * as well against a server that silently never asks — so the control below ("a
+ * capable client is not offered a token") is the one that has to fail if the
+ * wiring is undone.
+ */
+describe('approval through the client', () => {
+  const GUARDED: [string, Record<string, unknown>, string][] = [
+    [
+      'create_gist',
+      {
+        files: [{ filename: 'a.txt', content: 'A' }],
+        visibility: 'public',
+      },
+      'POST',
+    ],
+    [
+      'update_gist',
+      {
+        gistId: 'abc123',
+        // The fixture gist is already public, so this is the "writing into a
+        // gist others can read" arm of the guard rather than the widening one.
+        fileOps: [{ op: 'write', filename: 'a.txt', content: 'new' }],
+      },
+      'PATCH',
+    ],
+    ['delete_gist_files', { gistId: 'abc123', filenames: ['a.txt'] }, 'PATCH'],
+    ['delete_gist', { gistId: 'abc123' }, 'DELETE'],
+  ];
+
+  /** A gist with two files, so deleting one is not deleting all of them. */
+  function twoFileGist(): ReturnType<typeof gistFixture> {
+    return gistFixture({
+      files: {
+        'a.txt': { filename: 'a.txt', content: 'A' },
+        'b.txt': { filename: 'b.txt', content: 'B' },
+      },
+    });
+  }
+
+  it.each(GUARDED)(
+    '%s asks the user, and goes ahead once they accept',
+    async (name, args, method) => {
+      const calls = stubFetch(() => jsonResponse(twoFileGist()));
+      const client = await connectClient({}, 'accept');
+      const result = (await client.callTool({
+        name,
+        arguments: args,
+      })) as CallToolResult;
+      expect(client.prompts).toHaveLength(1);
+      expect(result.isError).toBeFalsy();
+      expect(calls.some((c) => c.init?.method === method)).toBe(true);
+    }
+  );
+
+  it.each(GUARDED)(
+    '%s does nothing when declined',
+    async (name, args, method) => {
+      const calls = stubFetch(() => jsonResponse(twoFileGist()));
+      const client = await connectClient({}, 'decline');
+      const result = (await client.callTool({
+        name,
+        arguments: args,
+      })) as CallToolResult;
+      expect(result.isError).toBe(true);
+      expect(resultText(result)).toContain('declined');
+      expect(calls.some((c) => c.init?.method === method)).toBe(false);
+    }
+  );
+
+  it.each(GUARDED)(
+    '%s does nothing when the dialog is cancelled',
+    async (name, args, method) => {
+      const calls = stubFetch(() => jsonResponse(twoFileGist()));
+      const client = await connectClient({}, 'cancel');
+      const result = (await client.callTool({
+        name,
+        arguments: args,
+      })) as CallToolResult;
+      expect(result.isError).toBe(true);
+      expect(calls.some((c) => c.init?.method === method)).toBe(false);
+    }
+  );
+
+  it.each(GUARDED)(
+    '%s refuses a token it never issued',
+    async (name, args, method) => {
+      const calls = stubFetch(() => jsonResponse(twoFileGist()));
+      const client = await connectClient();
+      const result = (await client.callTool({
+        name,
+        arguments: {
+          ...args,
+          confirm_token: 'deadbeefdeadbeefdeadbeefdeadbeef',
+        },
+      })) as CallToolResult;
+      expect(result.isError).toBe(true);
+      expect(resultText(result)).toContain('invalid, expired');
+      expect(calls.some((c) => c.init?.method === method)).toBe(false);
+    }
+  );
+
+  it('does not offer a token to a client that can be asked', async () => {
+    // The control. Restore the token-only branch and this is the test that
+    // fails: the others would still pass, because accepting a dialog and
+    // quoting a token back are indistinguishable from the outside.
+    stubFetch(() => jsonResponse(twoFileGist()));
+    const client = await connectClient({}, 'accept');
+    const result = (await client.callTool({
+      name: 'delete_gist',
+      arguments: { gistId: 'abc123' },
+    })) as CallToolResult;
+    expect(resultText(result)).not.toContain('confirm_token=');
+    expect(client.prompts[0]).toContain('git repository with all revisions');
+  });
+
+  it('still hands a token to a client that cannot ask anyone', async () => {
+    // The fallback is not a leftover: it is the only gate a client without
+    // elicitation has, and it must keep working unchanged.
+    stubFetch(() => jsonResponse(twoFileGist()));
+    const client = await connectClient();
+    const result = (await client.callTool({
+      name: 'delete_gist',
+      arguments: { gistId: 'abc123' },
+    })) as CallToolResult;
+    expect(resultText(result)).toContain('confirm_token=');
   });
 });

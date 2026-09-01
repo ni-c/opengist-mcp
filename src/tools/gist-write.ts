@@ -252,6 +252,10 @@ export function registerGistWriteTools(
       title: 'Update a gist',
       description:
         'Change the metadata of a gist and/or write and rename files. ' +
+        'File changes go in **fileOps**, not in `files` — `files` is what ' +
+        'create_gist takes, and passing it here is not an error: the unknown ' +
+        'key is dropped, the metadata fields apply, and the file changes ' +
+        'silently do not happen. ' +
         'Files you do not list are left untouched — never list a file just to preserve it. ' +
         'This tool can never delete a file; use delete_gist_files for that. ' +
         'Widening the visibility (private → unlisted/public, unlisted → public) discloses the gist and therefore needs a confirm_token, ' +
@@ -659,7 +663,12 @@ export function registerGistWriteTools(
     {
       title: 'Fork a gist',
       description:
-        "Fork somebody else's gist into your own account. Forking a gist you already forked returns the existing fork instead of creating a second one.",
+        "Fork somebody else's gist into your own account. Forking a gist you " +
+        'already forked returns the existing fork instead of creating a second ' +
+        'one.\n\n' +
+        'You cannot fork your **own** gist: Opengist refuses with 422 "cannot ' +
+        'fork your own gist". To get a second copy of your own, read it with ' +
+        'get_gist and create a new one from its files.',
       inputSchema: z.object({ gistId }),
       annotations: {
         // Additive: it copies a gist under this account and touches the

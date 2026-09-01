@@ -27,6 +27,16 @@ async function main(): Promise<void> {
     throw error;
   }
   await server.connect(new StdioServerTransport());
+  // Printed only when it is off. ELICITATION is unprefixed, so one
+  // `export ELICITATION=false` reaches every MCP server in the environment —
+  // this line is what makes that visible in the log of each one it actually
+  // reached. It is its own line rather than folded into the connection message
+  // below, because that message is the one people grep for a URL.
+  if (!config.elicitation) {
+    console.error(
+      'opengist-mcp: ELICITATION=false — guarded tools fall back to the two-call token'
+    );
+  }
   const readOnlyNote = config.readOnly
     ? ' (read-only: no write tools registered)'
     : '';

@@ -13,6 +13,14 @@ export interface Config {
   token: string | undefined;
   /** When true, no write tools are registered at all. */
   readOnly: boolean;
+  /**
+   * Whether a client that *can* show a dialog is asked before a guarded tool
+   * acts. `ELICITATION=false` turns the dialog off — the guard stays and falls
+   * back to the two-call token, so there is no setting in which a guarded call
+   * goes unannounced.
+   */
+  elicitation: boolean;
+
   insecureTls: boolean; /**
    * Raw value of `OPENGIST_ALLOW_TOOLS` — comma-separated tool names, `list_*`
    * prefixes, or `essential`. Kept unparsed on purpose: this file is a mirror of
@@ -45,6 +53,30 @@ export function missingConfigKeys(config: Config): string[] {
 }
 
 /**
+ * Reads `ELICITATION` — deliberately unprefixed, and deliberately fatal on
+ * anything it does not recognise.
+ *
+ * Unprefixed: environment variables are process-wide, so this is one switch for
+ * every server in the same environment. That is also its risk, which is why a
+ * server started with it off says so on its startup line.
+ *
+ * Fatal: this is the first variable of the family that defaults to *on*. The
+ * others fail open on a typo, which is the safe direction for them. Here a typo
+ * would leave the dialog running while the operator believes it is off — and an
+ * operator who believes that has no way to find out.
+ */
+export function parseElicitation(raw: string | undefined): boolean {
+  const value = raw?.trim().toLowerCase();
+  if (value === undefined || value === '' || value === 'true') return true;
+  if (value === 'false') return false;
+  console.error(
+    `opengist-mcp: ELICITATION must be "true" or "false" — got "${raw}". ` +
+      'Refusing to start rather than guess.'
+  );
+  process.exit(1);
+}
+
+/**
  * Reads the configuration from environment variables.
  *
  * Missing credentials are only a warning, not a fatal error: the server must be
@@ -67,6 +99,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // keep it readable in /proc/<pid>/environ and in every child process.
   delete env.OPENGIST_TOKEN;
 
+  // After the delete, deliberately: this one can exit the process, and an exit
+  // above would leave the token in the environment for whatever runs next.
+  const elicitation = parseElicitation(env.ELICITATION);
+
   const missing = [
     !rawUrl && 'OPENGIST_URL',
     !token && 'OPENGIST_TOKEN',
@@ -82,6 +118,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       baseUrl: undefined,
       token,
       readOnly,
+      elicitation,
       insecureTls,
       allowTools,
       denyTools,
@@ -139,6 +176,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     allowTools,
     denyTools,
     readOnly,
+    elicitation,
     insecureTls,
   };
 }

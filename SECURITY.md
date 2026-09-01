@@ -35,11 +35,20 @@ from `process.env` once it has been read, so it is not visible to child processe
 but it stays in memory for the lifetime of the process.
 
 Destructive and disclosing operations — deleting a gist or its files, widening a
-gist's visibility, creating a public or unlisted gist, writing into one — require a
-server-generated confirmation token bound to the specific target and the specific
-content. A model cannot satisfy that gate on its own: the token only ever appears in
-a previous tool result. Data returned from the Opengist API is untrusted input: it is
-marked as such, and confirmation prompts never quote it.
+gist's visibility, creating a public or unlisted gist, writing into one — **ask a
+person** through MCP elicitation: a dialog raised by the server and shown by the
+client, which the model cannot answer on its behalf, and which nothing proceeds
+without.
+
+Where the client cannot show a dialog they fall back to a server-generated token
+bound to the specific target and the specific content. That token only ever appears
+in a previous tool result, so injected text cannot produce one — but it proves the
+call was made twice with the same arguments and nothing more, and the fallback text
+says so. `ELICITATION=false` moves a capable client onto it deliberately; it does not
+remove the guard, and the server prints one line at startup saying it is off.
+
+Data returned from the Opengist API is untrusted input: it is marked as such, and
+confirmation prompts never quote it.
 
 `OPENGIST_READ_ONLY=true` registers only the read tools, which is a real reduction of
 the attack surface rather than a runtime check — but the boundary that actually holds

@@ -70,7 +70,10 @@ export function createServer(config: Config): McpServer {
       server,
       api,
       new ConfirmationStore(),
-      createApproval({ server: 'opengist-mcp' })
+      createApproval({
+        server: 'opengist-mcp',
+        elicitation: config.elicitation,
+      })
     );
     registerLikeWriteTools(server, api);
   }

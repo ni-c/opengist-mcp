@@ -17,7 +17,7 @@
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 300" role="img" aria-labelledby="arch-title arch-desc">
   <title id="arch-title">How opengist-mcp sits between an MCP client and an Opengist instance</title>
-  <desc id="arch-desc">The MCP client speaks stdio to opengist-mcp, which calls the Opengist REST API over HTTPS with a bearer token. Every response passes through a shaping layer that bounds it and marks it as untrusted, and destructive calls pass through a confirmation gate.</desc>
+  <desc id="arch-desc">The MCP client speaks stdio to opengist-mcp, which calls the Opengist REST API over HTTPS with a bearer token. Every response passes through a shaping layer that bounds it and marks it as untrusted, and destructive calls are put to a person first.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">

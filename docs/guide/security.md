@@ -23,25 +23,35 @@ The token is read once at startup and then deleted from `process.env`, so it is 
 visible to child processes or in `/proc/<pid>/environ`. It stays in memory for the
 lifetime of the process, which is unavoidable — it has to sign every request.
 
-## Confirmation tokens
+## The confirmation, honestly
 
-Three kinds of operation refuse their first call:
+Three kinds of operation **ask a person** before they act:
 
-| Operation                                            | Why it is gated                             |
+| Operation                                            | Why it is asked about                       |
 | ---------------------------------------------------- | ------------------------------------------- |
 | `delete_gist`, `delete_gist_files`                   | irreversible                                |
 | Widening visibility (private → unlisted → public)    | irreversible disclosure                     |
 | Creating a public/unlisted gist, or writing into one | disclosure of whatever the model is holding |
 
-The refusal carries a random, single-use token that expires after five minutes. The
-second call, with the token attached, executes.
+Where the MCP client supports elicitation, that is a **dialog** shown to whoever is
+sitting there — the model cannot answer it on their behalf, and nothing happens until
+an answer comes back.
 
-The reason it is a token and not a `confirm: true` flag is that a flag is something
-the model can set on its own — and can be _talked into_ setting by text inside a gist
-it read earlier in the session. A token that only ever appeared in a previous tool
-result cannot be produced that way.
+The reason it is not a `confirm: true` flag is that a flag is something the model can
+set on its own — and can be _talked into_ setting by text inside a gist it read
+earlier in the session.
 
-Each token is bound to the exact effect of the call it was issued for:
+Where the client cannot show a dialog, the call is refused and carries a random,
+single-use token that expires after five minutes; the second call, with the token
+attached, executes. That token only ever appeared in a previous tool result, so it
+cannot be produced by injected text — but be clear about what it proves, because this
+server is: **the call was made twice with the same arguments, and nothing more.** A
+model can read it out of the first result and quote it back in the same turn. The
+fallback text says so rather than implying somebody approved, and names whether it
+was the client that could not be asked or the operator who switched the dialog off
+with `ELICITATION=false`.
+
+Either way the approval is bound to the exact effect of the call it was issued for:
 
 - `delete_gist_files` binds to the precise set of filenames, so a confirmation for
   `["notes.txt"]` cannot be replayed for `["notes.txt", "secrets.env"]`.
@@ -55,7 +65,9 @@ Each token is bound to the exact effect of the call it was issued for:
 Two smaller properties are worth knowing. Confirmations are checked **after** the
 arguments are validated, so a call that could not have succeeded anyway is reported
 as the input error it is rather than costing a round-trip. And narrowing visibility
-never needs a token: making a gist private is not a disclosure.
+is never asked about: making a gist private is not a disclosure.
+
+See [Asking a person](/guide/approval).
 
 ## Untrusted content
 

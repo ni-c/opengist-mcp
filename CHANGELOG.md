@@ -18,6 +18,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guarded tools: `create_gist`, `update_gist`, `delete_gist_files` and
   `delete_gist`.
 
+- `ELICITATION` switches the dialog off — `false` sends a client that could have
+  been asked down the two-call-token path instead. For a scheduled job or a test
+  harness, where a dialog is the wrong shape rather than an unwanted one.
+
+  It does **not** remove the guard: there is no setting in which a guarded call
+  goes unannounced. Two deliberate rough edges come with it. The variable is
+  **not prefixed**, so one `export ELICITATION=false` reaches every MCP server in
+  the environment — which is why a server started with it off prints a line
+  saying so, on a line of its own rather than folded into the connection message
+  people grep for a URL, and why the fallback text names the server instead of
+  blaming a client that was working fine. And a value that is neither `true` nor
+  `false` **stops the server**: it is the only variable here that defaults to
+  _on_, so failing off on a typo would leave the dialog running while the
+  operator believed it was off. It is read after `OPENGIST_TOKEN` is wiped from
+  the environment, so that exit cannot leave the token behind.
+
+- A `docs/guide/approval.md` page.
+
 ### Changed
 
 - **BREAKING:** the confirmation parameter is now `confirm_token`, not

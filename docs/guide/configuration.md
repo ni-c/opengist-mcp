@@ -88,6 +88,18 @@ asking.
 Any value other than the exact string `true` counts as false. `1`, `yes` and `TRUE`
 all leave the write tools enabled.
 
+## Turning the approval dialog off
+
+Deleting, and anything that widens a gist's visibility, ask a person through MCP
+elicitation before they act. `ELICITATION=false` takes them to the two-call token
+instead. It does not remove the guard; there is no setting in which a guarded call
+goes unannounced.
+
+The variable deliberately carries no `OPENGIST_` prefix, which means it reaches
+every MCP server in the same environment, and — unlike the booleans here — a value
+it does not recognise **stops the server** rather than failing off. See
+[Asking a person](/guide/approval).
+
 ## Choosing the tools that load
 
 Read-only mode is one cut, along a line this server drew for you.

@@ -48,7 +48,7 @@ reliably from seven than from fourteen — see
 | ----------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
 | `OPENGIST_URL`          | yes      | Base URL of your instance, e.g. `https://gist.example.com`. A trailing `/api` is accepted and stripped. |
 | `OPENGIST_TOKEN`        | yes      | Personal Access Token, starts with `og_`                                                                |
-| `OPENGIST_READ_ONLY`    | no       | `true` registers only the read tools; the write tools do not exist at all in that session               |
+| `OPENGIST_READ_ONLY`    | no       | `true`, `1` or `yes` registers only the read tools; the write tools do not exist at all in that session |
 | `OPENGIST_INSECURE_TLS` | no       | `true` accepts self-signed certificates, scoped to the Opengist connection (never process-wide)         |
 | `OPENGIST_ALLOW_TOOLS`  | no       | Comma-separated tool names, `list_*` prefixes, or `essential` for a curated preset                      |
 | `OPENGIST_DENY_TOOLS`   | no       | Same syntax; removed from whatever `OPENGIST_ALLOW_TOOLS` left                                          |

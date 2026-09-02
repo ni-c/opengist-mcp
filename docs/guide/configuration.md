@@ -85,8 +85,10 @@ The six write tools — `create_gist`, `update_gist`, `delete_gist_files`,
 see them in `tools/list` and cannot call them, rather than being told "no" after
 asking.
 
-Any value other than the exact string `true` counts as false. `1`, `yes` and `TRUE`
-all leave the write tools enabled.
+`true`, `1` and `yes` all turn it on, in any casing. This switch takes capability
+away, so it is read generously on purpose: a spelling an operator plausibly meant
+must not quietly leave every write tool registered. `OPENGIST_INSECURE_TLS` is the
+opposite case — it grants something — and there only the exact string `true` counts.
 
 ## Turning the approval dialog off
 

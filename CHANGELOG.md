@@ -85,6 +85,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OPENGIST_ALLOW_TOOLS` are adjacent lines in every compose file, and a paste
   into the wrong one used to print the credential into the client's log.
 
+- `MAX_RESULT_BYTES` is a **ceiling** again. The fallback for an oversized
+  result only replaced file contents, so a payload whose bulk sat anywhere else
+  — twenty thousand filenames, five hundred fork summaries, a hundred long
+  descriptions — was announced as truncated and returned in full anyway.
+  Megabytes reached the model that way. The result is now cut outright when
+  stripping is not enough, and the number of file entries and fork entries a
+  single gist detail may carry is capped like the commit list already was, each
+  with a note naming the tool that pages through the rest.
+
+- A file named `constructor`, `toString`, `valueOf`, `hasOwnProperty` or
+  `__proto__` is handled like any other. The payload builder tested for presence
+  against an object literal, so those names answered with an inherited
+  `Object.prototype` member: a rename **onto** such a file passed the collision
+  check and destroyed it, and a write **to** one was refused as a duplicate that
+  did not exist. Filenames come out of the gist, and all five are legal ones.
+
+- `OPENGIST_READ_ONLY` accepts `1` and `yes` as well as `true`, in any casing. A
+  switch that takes capability away is read generously on purpose: the exact
+  string comparison this replaces left every write tool registered without
+  saying a word. `OPENGIST_INSECURE_TLS` grants something instead, so there the
+  strict comparison stays — an unrecognised value must fail towards verifying.
+
+### Security
+
+- `update_gist` **asks before publishing a title or a description**. The gate
+  tested for file operations, so a call that changed nothing else went straight
+  to the PATCH — on a public gist, with a client that could have shown a dialog
+  and was never given one. A title and a description are content out of the
+  model's context exactly like a file body is, `create_gist` has always
+  fingerprinted all three together, and on a public gist they are the part a
+  reader sees without opening a file. The prompt names what is about to be
+  published and still quotes none of it.
+
+- `SECURITY.md` states what an approval proves and what it does not: binding to
+  one operation with one set of arguments, but not freshness. The two-call token
+  is single-use, and on a 2025-era connection the dialog answer never leaves the
+  process — the residual case, and what to do about it, is written down against
+  the day this server serves a protocol revision where it does.
+
 ## [0.3.0] - 2026-08-27
 
 ### Added

@@ -141,6 +141,20 @@ describe('a gist through its whole life', () => {
     ).toContain('rewritten');
   });
 
+  it('will not retitle it while it is public without being asked', async () => {
+    // The gate hung on `fileOps` once, so a call carrying nothing but a title
+    // reached the PATCH unannounced. The gist is public, which is the
+    // disclosure arm of the guard; `plain` cannot show a dialog, so a refusal
+    // carrying a token is what a working gate looks like from here.
+    const refusal = await plain.call('update_gist', {
+      gistId,
+      title: 'Published without anyone being asked',
+    });
+    expect(refusal).toContain('confirm_token');
+    const unchanged = parse<Gist>(await asking.call('get_gist', { gistId }));
+    expect(unchanged.title).toBe('Integration gist');
+  });
+
   it('deletes one of its files', async () => {
     await asking.call('delete_gist_files', {
       gistId,
@@ -156,12 +170,11 @@ describe('forks and likes', () => {
     // Opengist answers 422 "cannot fork your own gist". Which is why the
     // second account exists: without it, `fork_gist` and `list_gist_forks`
     // could not be exercised at all.
-    const refused = await asking.call(
+    await asking.call(
       'fork_gist',
       { gistId },
-      { expectError: true }
+      { expectError: 'cannot fork your own gist' }
     );
-    expect(refused).toContain('cannot fork your own gist');
   });
 
   it('forks it as another user, which is a real clone', async () => {
@@ -179,6 +192,17 @@ describe('forks and likes', () => {
       await asking.call('list_gist_forks', { gistId })
     );
     expect(forks.forks.length).toBeGreaterThan(0);
+  });
+
+  it('forks it a second time and gets the fork that already exists', async () => {
+    // Why `fork_gist` needs no confirmation and no at-most-once guard of its
+    // own: the instance itself refuses to make a second copy, so a repeated
+    // call is not a repeated effect. Only a real Opengist can say that.
+    const again = parse<Gist & { created?: boolean }>(
+      await other.call('fork_gist', { gistId })
+    );
+    expect(again.id).toBe(forkId);
+    expect(again.created).toBe(false);
   });
 
   it('likes and unlikes, and says which state it is in', async () => {
@@ -223,7 +247,11 @@ describe('the fallback path for a client with no dialog', () => {
       gistId,
       confirm_token: tokenOf(refusal),
     });
-    await plain.call('get_gist', { gistId }, { expectError: true });
+    // The reason matters here: a bare `expectError` would be satisfied by a
+    // 500, a renamed argument or a schema rejection, none of which would mean
+    // the gist is gone. Opengist answers 404 for "deleted" and for "private
+    // and invisible to you" alike, and either one is what this asserts.
+    await plain.call('get_gist', { gistId }, { expectError: 'HTTP 404' });
   });
 
   it('asked a person on one harness and nobody on the other', () => {

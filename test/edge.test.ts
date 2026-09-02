@@ -12,6 +12,7 @@ import {
 } from './harness.js';
 
 import { Notes, shapeGistDetail, shapeUser } from '../src/shape.js';
+import { MAX_RESULT_BYTES } from '../src/result.js';
 import { withQuery } from '../src/schema.js';
 
 afterEach(() => {
@@ -150,6 +151,71 @@ describe('oversized results', () => {
     const text = resultText(result);
     expect(text).toContain('(omitted: result too large)');
     expect(text).toContain('get_gist_file');
+    // The strip is only worth anything if what comes back is actually small.
+    // Asserting the note alone would pass just as well on a 2.7 MB result.
+    expect(text.length).toBeLessThan(MAX_RESULT_BYTES);
+  });
+
+  it('cuts a result whose bulk is not in any file content', async () => {
+    // Stripping only replaces `content` strings. A hundred gists with a long
+    // description each carries megabytes past that replacer untouched, and
+    // every one of them is a gist anybody can push.
+    const gists = Array.from({ length: 100 }, (_, i) =>
+      gistFixture({
+        id: `g${i}`,
+        description: 'd'.repeat(30_000),
+        files: undefined,
+        commits: [],
+      })
+    );
+    stubFetch(() => jsonResponse(gists, 200, pageHeaders(1, 100, 100)));
+    const client = await connect();
+    const result = (await client.callTool({
+      name: 'list_gists',
+      arguments: { perPage: 100 },
+    })) as CallToolResult;
+
+    const text = resultText(result);
+    expect(text.length).toBeLessThan(MAX_RESULT_BYTES + 500);
+    expect(text).toContain('no longer valid JSON');
+  });
+
+  it('caps how many files one gist detail may list', async () => {
+    // 20 000 files is one `git push`, and nothing bounded the *number* of
+    // entries — only the content inside each one.
+    const files: Record<string, unknown> = {};
+    for (let i = 0; i < 1000; i++) {
+      files[`f${i}.txt`] = { filename: `f${i}.txt`, size: 1, content: 'x' };
+    }
+    stubFetch(() => jsonResponse(gistFixture({ files })));
+    const client = await connect();
+    const result = (await client.callTool({
+      name: 'get_gist',
+      arguments: { gistId: 'abc123' },
+    })) as CallToolResult;
+
+    const body = resultJson(result);
+    expect((body.files as unknown[]).length).toBe(200);
+    // The true count still reaches the model, just not as 1000 entries.
+    expect(body.fileCount).toBe(1000);
+    expect(String(body.notes)).toContain('first 200 of 1000 files');
+  });
+
+  it('caps how many forks one gist detail may list', () => {
+    const notes = new Notes();
+    const shaped = shapeGistDetail(
+      {
+        id: 'a',
+        files: {},
+        commits: [],
+        forks: Array.from({ length: 500 }, (_, i) => ({ id: `f${i}` })),
+      },
+      FULL_OPTIONS,
+      notes
+    );
+    expect((shaped.forks as unknown[]).length).toBe(100);
+    expect(notes.list().join(' ')).toContain('first 100 of 500 forks');
+    expect(notes.list().join(' ')).toContain('list_gist_forks');
   });
 });
 

@@ -87,7 +87,14 @@ export function parseElicitation(raw: string | undefined): boolean {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const rawUrl = env.OPENGIST_URL;
   const token = env.OPENGIST_TOKEN;
-  const readOnly = env.OPENGIST_READ_ONLY === 'true';
+  // Deliberately generous, and deliberately not the same test as the line
+  // below. This switch takes capability away, so every spelling an operator
+  // plausibly means has to work: `=1` or `=yes` that quietly left every write
+  // tool registered is a protection somebody believes they have and does not.
+  // OPENGIST_INSECURE_TLS grants something instead — it turns certificate
+  // verification off — so there the strict comparison is the safe direction and
+  // an unrecognised value must fail towards verifying.
+  const readOnly = /^(1|true|yes)$/i.test(env.OPENGIST_READ_ONLY?.trim() ?? '');
   const insecureTls = env.OPENGIST_INSECURE_TLS === 'true';
   const allowTools = env.OPENGIST_ALLOW_TOOLS;
   const denyTools = env.OPENGIST_DENY_TOOLS;

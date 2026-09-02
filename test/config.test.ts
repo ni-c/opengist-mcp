@@ -107,10 +107,42 @@ describe('loadConfig', () => {
     expect(config.insecureTls).toBe(true);
   });
 
-  it('treats any value other than "true" as false', () => {
-    const config = loadConfig(env({ OPENGIST_READ_ONLY: 'yes' }));
-    expect(config.readOnly).toBe(false);
-  });
+  // A switch that takes capability away has to be read generously: an operator
+  // who wrote OPENGIST_READ_ONLY=1 believes they have a protection, and the
+  // strict comparison this replaced left every write tool registered without
+  // saying a word.
+  // The padded spellings are not decoration: a compose file that yields
+  // `OPENGIST_READ_ONLY=true ` is a formatting accident, and reading it as
+  // "off" is the silent failure this tolerance exists to prevent.
+  it.each(['1', 'yes', 'TRUE', 'True', 'Yes', 'true ', ' yes'])(
+    'turns read-only on for %s',
+    (value) => {
+      expect(loadConfig(env({ OPENGIST_READ_ONLY: value })).readOnly).toBe(
+        true
+      );
+    }
+  );
+
+  it.each(['', '0', 'no', 'false', 'truthy'])(
+    'leaves read-only off for %s',
+    (value) => {
+      expect(loadConfig(env({ OPENGIST_READ_ONLY: value })).readOnly).toBe(
+        false
+      );
+    }
+  );
+
+  // The mirror image: OPENGIST_INSECURE_TLS grants something — it turns
+  // certificate verification off — so an unrecognised spelling must fail
+  // towards verifying, and the strict comparison stays.
+  it.each(['1', 'yes', 'TRUE'])(
+    'does not turn certificate checking off for %s',
+    (value) => {
+      expect(
+        loadConfig(env({ OPENGIST_INSECURE_TLS: value })).insecureTls
+      ).toBe(false);
+    }
+  );
 
   it('removes the token from the environment after loading', () => {
     const environment = env();

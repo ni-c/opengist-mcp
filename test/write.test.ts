@@ -552,6 +552,94 @@ describe('update_gist', () => {
     expect(resultText(refusal)).not.toContain('a.txt');
   });
 
+  // The gate used to hang on `fileOps !== undefined`, so a call carrying only a
+  // title or a description walked past it and the PATCH went out — with a
+  // client that could have shown a dialog and was never asked. Both fields are
+  // content out of the model's context exactly like a file body, and on a
+  // public gist they are the part a reader sees without opening a file.
+  const METADATA_ONLY: [string, Record<string, unknown>][] = [
+    ['title', { title: 'AKIAIOSFODNN7EXAMPLE' }],
+    ['description', { description: 'AKIAIOSFODNN7EXAMPLE' }],
+    [
+      'title and description',
+      { title: 'AKIAIOSFODNN7EXAMPLE', description: 'and the secret key' },
+    ],
+  ];
+
+  it.each(METADATA_ONLY)(
+    'requires a confirm token to publish a new %s, with no fileOps at all',
+    async (_kind, change) => {
+      const calls = stubFetch(() =>
+        jsonResponse(gistFixture({ visibility: 'public' }))
+      );
+      const client = await connect();
+      const args = { gistId: 'abc123', ...change };
+      const refusal = (await client.callTool({
+        name: 'update_gist',
+        arguments: args,
+      })) as CallToolResult;
+      expect(refusal.isError).toBeFalsy();
+      expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
+
+      const confirmed = (await client.callTool({
+        name: 'update_gist',
+        arguments: { ...args, confirm_token: tokenOf(refusal) },
+      })) as CallToolResult;
+      expect(confirmed.isError).toBeFalsy();
+      const patch = calls.find((c) => c.init?.method === 'PATCH');
+      expect(requestBody(patch)).toEqual(change);
+    }
+  );
+
+  it('asks a person before publishing a title, and does not read it out', async () => {
+    const calls = stubFetch(() =>
+      jsonResponse(gistFixture({ visibility: 'public' }))
+    );
+    const client = await connect({}, 'accept');
+    const result = (await client.callTool({
+      name: 'update_gist',
+      arguments: { gistId: 'abc123', title: 'AKIAIOSFODNN7EXAMPLE' },
+    })) as CallToolResult;
+    expect(client.prompts).toHaveLength(1);
+    // Named, not quoted: the dialog says which kind of content is about to be
+    // published, the value stays in the arguments the caller can look at.
+    expect(client.prompts[0]).toContain('a new title');
+    expect(client.prompts[0]).not.toContain('AKIAIOSFODNN7EXAMPLE');
+    expect(result.isError).toBeFalsy();
+    expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(true);
+  });
+
+  it('publishes nothing when the person declines a metadata-only change', async () => {
+    const calls = stubFetch(() =>
+      jsonResponse(gistFixture({ visibility: 'public' }))
+    );
+    const client = await connect({}, 'decline');
+    const result = (await client.callTool({
+      name: 'update_gist',
+      arguments: { gistId: 'abc123', description: 'AKIAIOSFODNN7EXAMPLE' },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
+  });
+
+  it('retitles a private gist without asking anyone', async () => {
+    // The other side of the same line: a private gist discloses nothing, so a
+    // title change there must not cost a dialog.
+    const calls = stubFetch(() =>
+      jsonResponse(gistFixture({ visibility: 'private' }))
+    );
+    const client = await connect({}, 'accept');
+    const result = (await client.callTool({
+      name: 'update_gist',
+      arguments: { gistId: 'abc123', title: 'internal notes' },
+    })) as CallToolResult;
+    expect(client.prompts).toHaveLength(0);
+    expect(result.isError).toBeFalsy();
+    expect(requestBody(calls.find((c) => c.init?.method === 'PATCH'))).toEqual({
+      title: 'internal notes',
+    });
+  });
+
   it('needs no token when the same call also makes the gist private', async () => {
     const calls = stubFetch(() =>
       jsonResponse(
@@ -611,6 +699,96 @@ describe('update_gist', () => {
     expect(result.isError).toBeFalsy();
     expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(true);
   });
+});
+
+/**
+ * Filenames come out of the gist, and `constructor`, `toString`, `valueOf`,
+ * `hasOwnProperty` and `__proto__` are all legal ones. The payload builder used
+ * to check `files[name] === undefined` against an object literal, so every one
+ * of these answered with an inherited Object.prototype member instead of
+ * nothing: the duplicate check fired for a file that was never written, and the
+ * rename collision check stayed silent for one that was about to be destroyed.
+ */
+describe('files named after Object.prototype members', () => {
+  const PROTOTYPE_NAMES = [
+    'constructor',
+    'toString',
+    'valueOf',
+    'hasOwnProperty',
+    '__proto__',
+  ];
+
+  /**
+   * Built through JSON rather than an object literal: `{ '__proto__': x }` sets
+   * the prototype instead of adding a key, which is the same trap one layer up.
+   * The real path is a JSON body too, and `JSON.parse` makes it an own property.
+   */
+  function gistWith(name: string): Record<string, unknown> {
+    const files = JSON.parse(
+      `{"a.txt":{"filename":"a.txt","content":"A"},` +
+        `${JSON.stringify(name)}:{"filename":${JSON.stringify(name)},"content":"C"}}`
+    ) as Record<string, unknown>;
+    return gistFixture({ visibility: 'private', files });
+  }
+
+  it.each(PROTOTYPE_NAMES)(
+    'refuses a rename that would destroy the existing "%s"',
+    async (name) => {
+      const calls = stubFetch(() => jsonResponse(gistWith(name)));
+      const client = await connect();
+      const result = (await client.callTool({
+        name: 'update_gist',
+        arguments: {
+          gistId: 'abc123',
+          fileOps: [{ op: 'rename', filename: 'a.txt', newFilename: name }],
+        },
+      })) as CallToolResult;
+      expect(result.isError).toBe(true);
+      expect(resultText(result)).toContain('collide');
+      expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
+    }
+  );
+
+  it.each(PROTOTYPE_NAMES)('writes to the existing "%s"', async (name) => {
+    // The same cause, pointing the other way: a file with one of these names
+    // could not be updated at all, because the duplicate check saw a phantom.
+    const calls = stubFetch(() => jsonResponse(gistWith(name)));
+    const client = await connect();
+    const result = (await client.callTool({
+      name: 'update_gist',
+      arguments: {
+        gistId: 'abc123',
+        fileOps: [{ op: 'write', filename: name, content: 'new' }],
+      },
+    })) as CallToolResult;
+    expect(result.isError).toBeFalsy();
+    const patch = calls.find((c) => c.init?.method === 'PATCH');
+    const files = (requestBody(patch) as { files: Record<string, unknown> })
+      .files;
+    expect(Object.keys(files)).toEqual([name]);
+    expect(files[name]).toEqual({ content: 'new' });
+  });
+
+  it.each(PROTOTYPE_NAMES)(
+    'still catches two operations on "%s"',
+    async (name) => {
+      const calls = stubFetch(() => jsonResponse(gistWith(name)));
+      const client = await connect();
+      const result = (await client.callTool({
+        name: 'update_gist',
+        arguments: {
+          gistId: 'abc123',
+          fileOps: [
+            { op: 'write', filename: name, content: 'a' },
+            { op: 'rename', filename: name, newFilename: 'b.txt' },
+          ],
+        },
+      })) as CallToolResult;
+      expect(result.isError).toBe(true);
+      expect(resultText(result)).toContain('Two operations');
+      expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
+    }
+  );
 });
 
 describe('delete_gist_files', () => {

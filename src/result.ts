@@ -9,12 +9,24 @@ export function textResult(text: string): CallToolResult {
   return { content: [{ type: 'text', text }] };
 }
 
-/** Hard ceiling on a single tool result, as a backstop behind the per-tool caps. */
-const MAX_RESULT_BYTES = 400_000;
+/**
+ * Hard ceiling on a single tool result, as a backstop behind the per-tool caps.
+ * Exported so the tests assert against the real number rather than a copy of it
+ * that can drift.
+ */
+export const MAX_RESULT_BYTES = 400_000;
 
 /**
  * Serializes a result, stripping file contents if the payload is still
  * pathologically large after the per-tool truncation.
+ *
+ * Stripping only reaches `content` strings, so it does nothing at all for a
+ * payload whose bulk is elsewhere — twenty thousand filenames, five hundred
+ * fork summaries, a hundred descriptions of a kilobyte each. Every one of those
+ * is a gist anybody can push. So the cut at the end is unconditional: this
+ * function is the ceiling it claims to be, and a result that has to be cut
+ * mid-structure is worth more to the caller as broken JSON with an explanation
+ * than as megabytes of well-formed JSON in the model's context.
  */
 export function jsonResult(data: unknown): CallToolResult {
   const text = JSON.stringify(data, null, 2);
@@ -28,8 +40,13 @@ export function jsonResult(data: unknown): CallToolResult {
         : value,
     2
   );
+  if (stripped.length <= MAX_RESULT_BYTES) {
+    return textResult(
+      `${stripped}\n\nNote: the result exceeded ${MAX_RESULT_BYTES} characters, so file contents were dropped. Fetch them individually with get_gist_file.`
+    );
+  }
   return textResult(
-    `${stripped}\n\nNote: the result exceeded ${MAX_RESULT_BYTES} characters, so file contents were dropped. Fetch them individually with get_gist_file.`
+    `${stripped.slice(0, MAX_RESULT_BYTES)}\n\nNote: the result exceeded ${MAX_RESULT_BYTES} characters even after file contents were dropped, so it was cut off here and is no longer valid JSON. Narrow the request instead — fewer items per page, or get_gist_file for a single file.`
   );
 }
 

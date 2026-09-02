@@ -259,7 +259,7 @@ export function registerGistWriteTools(
         'Files you do not list are left untouched — never list a file just to preserve it. ' +
         'This tool can never delete a file; use delete_gist_files for that. ' +
         'Widening the visibility (private → unlisted/public, unlisted → public) discloses the gist and therefore needs a confirm_token, ' +
-        'as does writing files into a gist that is already public or unlisted. Narrowing the visibility does not.',
+        'as does writing files, a title or a description into a gist that is already public or unlisted. Narrowing the visibility does not.',
       inputSchema: z.object({
         gistId,
         title: z.string().max(250).optional(),
@@ -308,7 +308,7 @@ export function registerGistWriteTools(
           .string()
           .optional()
           .describe(
-            'Only needed when widening the visibility. Omit on the first call; the refusal returns the token.'
+            'Only needed when widening the visibility, or when changing anything about a gist that is not private. Omit on the first call; the refusal returns the token.'
           ),
       }),
       annotations: {
@@ -353,13 +353,21 @@ export function registerGistWriteTools(
           newVisibility !== undefined &&
           (VISIBILITY_RANK[newVisibility] ?? 0) >
             (VISIBILITY_RANK[current] ?? 0);
+        // A title and a description are content out of the model's context in
+        // exactly the same way a file body is — `create_gist` fingerprints all
+        // three together for that reason — and on a public gist they are the
+        // part a reader sees first, without opening a file. Gating on `fileOps`
+        // alone let a rename of the gist publish arbitrary text unannounced.
+        const changesContent =
+          fileOps !== undefined ||
+          title !== undefined ||
+          description !== undefined;
         // Writing new content into an already-public gist discloses it just as
         // surely as widening a private one — same primitive, same content out
         // of the model's context, only without a visibility change to notice.
         // A call that narrows the visibility in the same breath is not a
         // disclosure, which is why this tests the *effective* visibility.
-        const publishesContent =
-          fileOps !== undefined && effective !== 'private';
+        const publishesContent = changesContent && effective !== 'private';
 
         // Validate the operations BEFORE asking for a confirmation. A call that
         // would be rejected anyway must not first cost the user a confirmation
@@ -391,10 +399,15 @@ export function registerGistWriteTools(
           });
           const resource = `gist:${id}:update:${effective}:${effectFingerprint}`;
           const opCount = fileOps === undefined ? 0 : fileOps.length;
-          const alsoChanges = [
-            title !== undefined && 'the title',
-            description !== undefined && 'the description',
+          // Named and counted, never quoted: which kinds of content this call
+          // publishes is server-side knowledge, while the values themselves are
+          // caller-supplied text that `fallbackNote` sends the reader to the
+          // arguments for. Without this list a title-only call would announce
+          // itself as "0 file operation(s)".
+          const changes = [
             opCount > 0 && `${opCount} file operation(s)`,
+            title !== undefined && 'a new title',
+            description !== undefined && 'a new description',
           ].filter((v): v is string => Boolean(v));
           const outcome = await approval.requestApproval(
             server,
@@ -403,11 +416,11 @@ export function registerGistWriteTools(
             {
               what: widens
                 ? `change the visibility of gist ${id} from ${current} to ${newVisibility}`
-                : `write ${opCount} file operation(s) to gist ${id}, which is ${current}`,
+                : `publish ${changes.join(', ')} to gist ${id}, which is ${current}`,
               consequence: widens
                 ? 'It becomes readable by others, and that cannot be undone for anyone who already saw it.' +
-                  (alsoChanges.length > 0
-                    ? ` The same call also changes ${alsoChanges.join(', ')}.`
+                  (changes.length > 0
+                    ? ` The same call also writes ${changes.join(', ')}.`
                     : ' The call changes nothing but the visibility.')
                 : 'The new content becomes readable by others and cannot be withdrawn from anyone who already saw it.' +
                   ` The gist has ${Object.keys(gist.files ?? {}).length} file(s).`,

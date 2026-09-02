@@ -11,6 +11,9 @@ export const config: Config = {
   token: 'og_test',
   readOnly: false,
   insecureTls: false,
+  elicitation: true,
+  allowTools: undefined,
+  denyTools: undefined,
 };
 
 export type FetchCall = { url: string; init: RequestInit | undefined };

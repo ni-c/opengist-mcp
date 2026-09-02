@@ -28,6 +28,7 @@ const base: Config = {
   token: 'og_test',
   readOnly: false,
   insecureTls: false,
+  elicitation: true,
   allowTools: undefined,
   denyTools: undefined,
 };

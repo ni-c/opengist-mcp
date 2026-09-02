@@ -177,9 +177,9 @@ async function accountWithToken(
   const register = await session.get('/-/register');
   if (!register.includes('name="_csrf"')) {
     throw new Error(
-      'Opengist did not offer the registration form. On a fresh instance it ' +
-        'should; if this one already has accounts, run `docker compose -f ' +
-        'test/integration/compose.yml down -v` and up again.'
+      'Opengist did not offer the registration form at all, which is not the ' +
+        'sign-up being refused but the page being missing — check the image ' +
+        'tag in compose.yml.'
     );
   }
   await session.post('/-/register', {
@@ -190,12 +190,34 @@ async function accountWithToken(
 
   const form = await session.get('/-/settings/access-tokens');
   if (!form.includes('name="scope_gist"')) {
+    // Two different failures land here and they need different answers.
+    //
+    // `OG_DISABLE_SIGNUP` stays false for the whole life of the container, so
+    // the form above renders whether or not the account already exists — a
+    // check for its presence never fires. And Opengist refuses a duplicate
+    // sign-up with 200 and the page re-rendered rather than a 4xx, so `post`
+    // does not throw either. On a stack brought up twice the registration is
+    // silently rejected, no session is established, and this page is the login
+    // form. Reporting that as a wrong image tag sends the reader to the wrong
+    // file for a state that `down -v` fixes.
+    // Not a check for a login form: an unauthenticated `/-/settings/*` does
+    // not render one, it redirects to the gist list, which is a 200 with a
+    // "Login" link in the nav and nothing else to go on. A settings page —
+    // any settings page, on any version — carries a `_csrf` token because it
+    // carries a form; the landing page does not.
+    const loggedOut = !form.includes('_csrf');
     throw new Error(
-      `Opengist has no access-token form for ${username}. Personal access ` +
-        'tokens arrived in 1.11 — check the image tag in compose.yml, and ' +
-        'that the registration above actually produced a session. The ' +
-        (first ? 'first' : 'second') +
-        ' account is the one that failed.'
+      loggedOut
+        ? `Opengist did not sign ${username} in, so this instance already has ` +
+            'that account: the suite needs a fresh one, because a duplicate ' +
+            'sign-up is refused with a re-rendered page rather than an error. ' +
+            'Run `docker compose -f test/integration/compose.yml down -v` and ' +
+            'up again.'
+        : `Opengist has no access-token form for ${username}, and the session ` +
+            'is fine — personal access tokens arrived in 1.11, so check the ' +
+            'image tag in compose.yml. The ' +
+            (first ? 'first' : 'second') +
+            ' account is the one that failed.'
     );
   }
   const created = await session.post('/-/settings/access-tokens', {

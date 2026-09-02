@@ -1,9 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { untrustedFields } from '../output-schema.js';
 
 import { OpengistApiError, type OpengistApi } from '../api.js';
 import { READ_ONLY } from './annotations.js';
-import { jsonResult, run, ToolInputError } from '../result.js';
+import { jsonResult, run, ToolInputError, untrustedResult } from '../result.js';
 import { gistId, gistPath, username } from '../schema.js';
 import { shapeUserDetail, type RawUser } from '../shape.js';
 
@@ -53,6 +54,14 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
           .describe('Look up this numeric user ID instead of the token owner'),
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        self: z.boolean().describe('True when no argument named someone else.'),
+        user: z
+          .looseObject({})
+          .nullable()
+          .describe('An allowlist of the record, email included when self.'),
+      }),
     },
     ({ username: name, userId }) =>
       run(async () => {
@@ -88,7 +97,7 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
               'Check that OPENGIST_URL points at the Opengist instance itself and not at a proxy or login page.'
           );
         }
-        return jsonResult({
+        return untrustedResult({
           self: name === undefined && userId === undefined,
           user: shapeUserDetail(response as RawUser),
         });
@@ -103,6 +112,15 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
         'Report whether the token owner has liked the given gist. Also distinguishes "not liked" from "not visible to you".',
       inputSchema: z.object({ gistId }),
       annotations: READ_ONLY,
+      // No untrusted marker: an id this server was given and a boolean it
+      // read. The marker has to mean something, and putting it on this would
+      // make it noise.
+      outputSchema: z.object({
+        gistId: z.string(),
+        liked: z.boolean().optional(),
+        visible: z.boolean().optional(),
+        note: z.string().optional(),
+      }),
     },
     ({ gistId: id }) =>
       run(async () => {
@@ -144,6 +162,16 @@ export function registerLikeWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      // No untrusted marker: an id this server was given and a boolean it
+      // computed. The marker has to mean something.
+      outputSchema: z.object({
+        gistId: z.string(),
+        liked: z.boolean(),
+        changed: z
+          .boolean()
+          .describe('False when it was already in that state.'),
+        note: z.string().optional(),
+      }),
     },
     ({ gistId: id, liked }) =>
       run(async () => {

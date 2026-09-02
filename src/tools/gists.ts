@@ -1,6 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import {
+  commit,
+  gistDetail,
+  gistSummary,
+  notes,
+  pagination,
+  untrustedFields,
+} from '../output-schema.js';
+import {
   filename,
   gistId,
   gistPath,
@@ -30,7 +38,7 @@ import {
 import type { OpengistApi } from '../api.js';
 import { READ_ONLY } from './annotations.js';
 import { parsePagination, paginationNotes } from '../pagination.js';
-import { jsonResult, run, ToolInputError } from '../result.js';
+import { run, ToolInputError, untrustedResult } from '../result.js';
 
 const DEFAULT_PER_PAGE = 30;
 
@@ -104,6 +112,14 @@ export function registerGistReadTools(
         perPage,
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        scope: z.string(),
+        username: z.string().optional(),
+        pagination,
+        gists: z.array(gistSummary),
+        notes,
+      }),
     },
     ({ scope, username: user, since, page, perPage }) =>
       run(async () => {
@@ -121,7 +137,7 @@ export function registerGistReadTools(
         notes.addAll(paginationNotes(pagination, gists.length, 'list_gists'));
         if (gists.some(hasUntrustedMetadata))
           notes.add(UNTRUSTED_METADATA_NOTE);
-        return jsonResult({
+        return untrustedResult({
           scope,
           username: user,
           pagination,
@@ -188,6 +204,7 @@ export function registerGistReadTools(
           .describe('Include the git clone and ssh URLs (default false)'),
       }),
       annotations: READ_ONLY,
+      outputSchema: gistDetail.extend({ ...untrustedFields, notes }),
     },
     ({ gistId: id, sha: revision, ...options }) =>
       run(async () => {
@@ -198,7 +215,7 @@ export function registerGistReadTools(
         const gist = (await api.get(path)) as RawGist;
         const notes = new Notes();
         const shaped = shapeGistDetail(gist, options, notes);
-        return jsonResult({
+        return untrustedResult({
           ...shaped,
           ...(revision !== undefined && { revision }),
           notes: notes.list(),
@@ -235,6 +252,21 @@ export function registerGistReadTools(
           .describe('Maximum number of characters to return'),
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        gistId: z.string(),
+        filename: z.string(),
+        sha: z.string(),
+        contentType: z.string().optional(),
+        size: z.number().int(),
+        returnedBytes: z.number().int().optional(),
+        content: z.string().optional().describe('Absent for a binary file.'),
+        contentOmitted: z
+          .literal('binary')
+          .optional()
+          .describe('Present instead of content when the file is binary.'),
+        notes,
+      }),
     },
     ({ gistId: id, filename: name, sha: revision, offset, maxBytes }) =>
       run(async () => {
@@ -247,7 +279,7 @@ export function registerGistReadTools(
           );
         }
         if (looksBinary(raw.text)) {
-          return jsonResult({
+          return untrustedResult({
             gistId: id,
             filename: name,
             sha: resolved,
@@ -268,7 +300,7 @@ export function registerGistReadTools(
           );
         }
         notes.add(UNTRUSTED_CONTENT_NOTE);
-        return jsonResult({
+        return untrustedResult({
           gistId: id,
           filename: name,
           sha: resolved,
@@ -290,6 +322,13 @@ export function registerGistReadTools(
         'List the commit history of a gist, most recent first. Use a commit SHA from here with get_gist or get_gist_file to read an older revision.',
       inputSchema: z.object({ gistId, page, perPage }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        gistId: z.string(),
+        pagination,
+        commits: z.array(commit),
+        notes,
+      }),
     },
     ({ gistId: id, page, perPage }) =>
       run(async () => {
@@ -310,7 +349,7 @@ export function registerGistReadTools(
           paginationNotes(pagination, commits.length, 'list_gist_commits')
         );
         if (hasUntrustedAuthor(commits)) notes.add(UNTRUSTED_AUTHOR_NOTE);
-        return jsonResult({
+        return untrustedResult({
           gistId: id,
           pagination,
           commits: commits.map(shapeCommit),
@@ -326,6 +365,13 @@ export function registerGistReadTools(
       description: 'List the gists that were forked from the given gist.',
       inputSchema: z.object({ gistId, page, perPage }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        gistId: z.string(),
+        pagination,
+        forks: z.array(gistSummary),
+        notes,
+      }),
     },
     ({ gistId: id, page, perPage }) =>
       run(async () => {
@@ -345,7 +391,7 @@ export function registerGistReadTools(
         );
         if (forks.some(hasUntrustedMetadata))
           notes.add(UNTRUSTED_METADATA_NOTE);
-        return jsonResult({
+        return untrustedResult({
           gistId: id,
           pagination,
           forks: forks.map(shapeGistSummary),

@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Every tool declares an `outputSchema` and answers with `structuredContent`
+  beside the text block. A client no longer has to parse prose to use a result.
+
+  Every tool that reports gist content carries `untrusted: true` and
+  `source: "opengist"` as fields. This server has always said so in `notes`,
+  which is prose in a list — a client can read it but not check it, and the
+  field is what makes it checkable. `check_gist_like`, `set_gist_like` and
+  `delete_gist` are without it: their answer is an id they were given and a
+  boolean, and a marker on those would be noise.
+
+### Changed
+
+- A result too large even after file contents are dropped is now an error. It
+  used to answer with the JSON cut at the ceiling — unparseable, but visible —
+  and that is not something `structuredContent` can carry, nor something the
+  SDK would accept against the schema the tool declares.
+
+- The two-call `confirm_token` prompt is an error result. What was asked for did
+  not happen, which is what `isError` says, and a tool with an output schema may
+  not answer without `structuredContent` unless the result is an error. The text
+  is unchanged and still carries the token.
+
 - Tools that need a confirmation now **ask the user**, on clients that can show
   a prompt. The two-call token remains for clients that cannot, so nothing that
   works today stops working — but where a person can be asked, one is, instead

@@ -72,6 +72,44 @@ describe('tool registration', () => {
     expect(byName.get('create_gist')?.annotations?.destructiveHint).toBe(false);
   });
 
+  it('declares an output schema on every tool', async () => {
+    // The same argument as the annotations below, one field along. A tool that
+    // says nothing about its result forces a client to parse prose to find out
+    // what it got, and the SDK sends no `structuredContent` at all for a tool
+    // that declared no schema.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const tool of tools) {
+      expect(tool.outputSchema, tool.name).toBeDefined();
+      // An object root, not merely a schema. SEP-2106 allows an array or a
+      // scalar, but a 2025-era client is served that same tool with the schema
+      // rewritten to `{result: …}` — so it would answer in two shapes
+      // depending on who asked.
+      expect(tool.outputSchema?.type, tool.name).toBe('object');
+    }
+  });
+
+  it('marks every result built from gist content as untrusted', async () => {
+    // A gist title, description, filename and git author name are written by
+    // whoever pushed the gist. A client reading only `structuredContent` must
+    // not get them unframed — the notes this server adds are prose in a list,
+    // which a client can read but not check.
+    const client = await connect();
+    const { tools } = await client.listTools();
+    const plain = tools
+      .filter((tool) => {
+        const properties = tool.outputSchema?.properties as
+          Record<string, unknown> | undefined;
+        return properties?.untrusted === undefined;
+      })
+      .map((tool) => tool.name)
+      .sort();
+    // The three whose answer is entirely this server's own words: an id it was
+    // given, a boolean it computed. A marker on those would be noise.
+    expect(plain).toEqual(['check_gist_like', 'delete_gist', 'set_gist_like']);
+  });
+
   it('declares all four annotation hints on every tool', async () => {
     // Not a style rule. Two of the four default to a *stronger* claim than
     // silence suggests: the specification gives destructiveHint and

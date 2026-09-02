@@ -175,9 +175,14 @@ describe('oversized results', () => {
       arguments: { perPage: 100 },
     })) as CallToolResult;
 
+    // It used to answer with the JSON cut at the ceiling — unparseable, but
+    // visible. That stopped being an option when every tool gained an output
+    // schema: `structuredContent` has to parse, the two channels have to carry
+    // the same value, and the SDK checks the result against what the tool says
+    // it returns. There is no answer of this size, and saying so is honest.
+    expect(result.isError).toBe(true);
     const text = resultText(result);
-    expect(text.length).toBeLessThan(MAX_RESULT_BYTES + 500);
-    expect(text).toContain('no longer valid JSON');
+    expect(text).toContain('Narrow the request');
   });
 
   it('caps how many files one gist detail may list', async () => {

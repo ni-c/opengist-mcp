@@ -1,4 +1,5 @@
 import {
+  expectEveryToolDeclaresOutputSchema,
   expectEveryToolExercised,
   startServer,
   toolCoverage,
@@ -146,10 +147,14 @@ describe('a gist through its whole life', () => {
     // reached the PATCH unannounced. The gist is public, which is the
     // disclosure arm of the guard; `plain` cannot show a dialog, so a refusal
     // carrying a token is what a working gate looks like from here.
-    const refusal = await plain.call('update_gist', {
-      gistId,
-      title: 'Published without anyone being asked',
-    });
+    // An error result: nothing was published, which is what `isError` says —
+    // and a tool that declares an `outputSchema` may not answer without
+    // `structuredContent` unless the result is an error.
+    const refusal = await plain.call(
+      'update_gist',
+      { gistId, title: 'Published without anyone being asked' },
+      { expectError: /confirm_token=/ }
+    );
     expect(refusal).toContain('confirm_token');
     const unchanged = parse<Gist>(await asking.call('get_gist', { gistId }));
     expect(unchanged.title).toBe('Integration gist');
@@ -237,7 +242,11 @@ describe('search', () => {
 
 describe('the fallback path for a client with no dialog', () => {
   it('deletes only after the token comes back', async () => {
-    const refusal = await plain.call('delete_gist', { gistId });
+    const refusal = await plain.call(
+      'delete_gist',
+      { gistId },
+      { expectError: /confirm_token=/ }
+    );
     expect(refusal).toContain('confirm_token');
     expect(plain.prompts).toHaveLength(0);
     // Still there: the first call is a question.
@@ -264,6 +273,15 @@ describe('cleaning up', () => {
   it('deletes the fork, from the account that owns it', async () => {
     await other.call('delete_gist', { gistId: forkId });
   });
+});
+
+it('declares an output schema on every tool', async () => {
+  // The unit suite checks the same thing against a stub. Here it is checked
+  // against the server that has just answered every one of these tools against
+  // a real Opengist — and each of those answers went through the SDK's
+  // validation against the schema below it.
+  const { tools } = await asking.client.listTools();
+  expectEveryToolDeclaresOutputSchema(tools);
 });
 
 it('exercises every tool in the catalogue', () => {

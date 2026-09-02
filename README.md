@@ -168,6 +168,33 @@ npm run build
 | `fork_gist`            | Fork a gist; reports whether a new fork was created or one already existed                           |
 | `set_gist_like`        | Like or unlike a gist idempotently (reads the current state first, so a repeat call is not a toggle) |
 
+### Structured output
+
+Every tool declares an `outputSchema` and answers with `structuredContent`
+alongside the text block, so a client can use the result without parsing prose:
+
+```jsonc
+{
+  "untrusted": true,
+  "source": "opengist",
+  "scope": "self",
+  "pagination": { "page": 1, "perPage": 20, "total": 42, "nextPage": 2 },
+  "gists": [{ "id": "abc123", "title": "…", "visibility": "private" }],
+  "notes": ["…"],
+}
+```
+
+Every tool that reports gist content carries `untrusted: true` and
+`source: "opengist"` as fields. This server has always said so in `notes` —
+prose in a list, which a client can read but not check — and the field is what
+makes it checkable. Three tools are without it, because their answer is entirely
+this server's own words: `check_gist_like`, `set_gist_like` and `delete_gist`
+report an id they were given and a boolean.
+
+An over-budget result still drops file contents first. Where that is not enough
+it is now an **error**: it used to answer with the JSON cut at the ceiling,
+which a text block tolerates and `structuredContent` cannot.
+
 ### Safety
 
 - **Irreversible actions ask a person.** `delete_gist`, `delete_gist_files` and widening a gist's visibility raise a real dialog through MCP elicitation where the client supports it — one the model cannot answer on its behalf. A plain `confirm: true` flag could be set by the model on its own, or be talked into it by text inside a gist. Where the client cannot show a dialog they refuse the first call and return a random, single-use token that expires after five minutes; that proves the call was made twice with the same arguments and nothing more, and the text says so. Either way the approval for `delete_gist_files` is bound to the exact set of filenames, so one for a single file cannot be replayed to delete another. `ELICITATION=false` takes the fallback deliberately; it never removes the guard. See [Asking a person](https://opengist-mcp.ni-c.de/guide/approval).

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { gistDetail, notes, untrustedFields } from '../output-schema.js';
 import {
   buildFilesPayload,
   Notes,
@@ -11,7 +12,13 @@ import {
 
 import type { OpengistApi } from '../api.js';
 import type { Approver, ConfirmationStore } from 'mcp-approval';
-import { errorResult, jsonResult, run, ToolInputError } from '../result.js';
+import {
+  errorResult,
+  jsonResult,
+  run,
+  ToolInputError,
+  untrustedResult,
+} from '../result.js';
 import { filename, gistId, gistPath, visibility } from '../schema.js';
 
 const SUMMARY_OPTIONS = {
@@ -123,6 +130,11 @@ export function registerGistWriteTools(
         idempotentHint: false,
         openWorldHint: false,
       },
+      outputSchema: gistDetail.extend({
+        ...untrustedFields,
+        created: z.literal(true),
+        notes,
+      }),
     },
     (
       {
@@ -238,7 +250,7 @@ export function registerGistWriteTools(
         const gist = response.data as RawGist;
         const notes = new Notes();
         const shaped = shapeGistDetail(gist, SUMMARY_OPTIONS, notes);
-        return jsonResult({
+        return untrustedResult({
           created: true,
           ...shaped,
           notes: notes.list(),
@@ -320,6 +332,23 @@ export function registerGistWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: gistDetail.extend({
+        ...untrustedFields,
+        updated: z.literal(true),
+        changed: z.object({
+          title: z.boolean(),
+          description: z.boolean(),
+          visibility: z.boolean(),
+        }),
+        fileChanges: z.object({
+          written: z.array(z.string()),
+          created: z.array(z.string()),
+          renamed: z.array(z.object({ from: z.string(), to: z.string() })),
+          untouched: z.array(z.string()),
+        }),
+        previousRevision: z.string().optional(),
+        notes,
+      }),
     },
     (
       {
@@ -476,7 +505,7 @@ export function registerGistWriteTools(
           );
         }
 
-        return jsonResult({
+        return untrustedResult({
           updated: true,
           ...shaped,
           changed: {
@@ -525,6 +554,11 @@ export function registerGistWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: gistDetail.extend({
+        ...untrustedFields,
+        deletedFiles: z.array(z.string()),
+        notes,
+      }),
     },
     ({ gistId: id, filenames, confirm_token }, mcp) =>
       run(async () => {
@@ -592,7 +626,7 @@ export function registerGistWriteTools(
         const updated = response.data as RawGist;
         const notes = new Notes();
         const shaped = shapeGistDetail(updated, SUMMARY_OPTIONS, notes);
-        return jsonResult({
+        return untrustedResult({
           deletedFiles: sorted,
           ...shaped,
           notes: notes.list(),
@@ -625,6 +659,12 @@ export function registerGistWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      // No untrusted marker: the id this server was given, and the fact that
+      // it is gone. Nothing from the instance survives into this answer.
+      outputSchema: z.object({
+        deleted: z.literal(true),
+        gistId: z.string(),
+      }),
     },
     ({ gistId: id, confirm_token }, mcp) =>
       run(async () => {
@@ -692,6 +732,13 @@ export function registerGistWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
+      outputSchema: gistDetail.extend({
+        ...untrustedFields,
+        created: z
+          .boolean()
+          .describe('False when a fork already existed and was returned.'),
+        notes,
+      }),
     },
     ({ gistId: id }) =>
       run(async () => {
@@ -704,7 +751,7 @@ export function registerGistWriteTools(
             'You had already forked this gist; the existing fork is returned instead of a new one.'
           );
         }
-        return jsonResult({
+        return untrustedResult({
           created: response.status === 201,
           ...shaped,
           notes: notes.list(),

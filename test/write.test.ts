@@ -129,10 +129,11 @@ describe('create_gist', () => {
         visibility: 'public',
       },
     })) as CallToolResult;
-    // The confirmation prompt is a plain result, not an error: asking a
-    // question is not a failure, and the whole family answers it the same
-    // way since the check moved into mcp-approval.
-    expect(result.isError).toBeFalsy();
+    // The confirmation prompt is an error result: what was asked for did not
+    // happen. It also has to be one — a tool that declares an `outputSchema`
+    // may not answer without `structuredContent` unless the result is an
+    // error, and a prompt has none to give.
+    expect(result.isError).toBe(true);
     expect(resultText(result)).toContain('readable by anyone');
     // Nothing was published: the refusal happens before the POST.
     expect(calls).toHaveLength(0);
@@ -148,10 +149,11 @@ describe('create_gist', () => {
         visibility: 'unlisted',
       },
     })) as CallToolResult;
-    // The confirmation prompt is a plain result, not an error: asking a
-    // question is not a failure, and the whole family answers it the same
-    // way since the check moved into mcp-approval.
-    expect(result.isError).toBeFalsy();
+    // The confirmation prompt is an error result: what was asked for did not
+    // happen. It also has to be one — a tool that declares an `outputSchema`
+    // may not answer without `structuredContent` unless the result is an
+    // error, and a prompt has none to give.
+    expect(result.isError).toBe(true);
     expect(calls).toHaveLength(0);
   });
 
@@ -464,10 +466,11 @@ describe('update_gist', () => {
       name: 'update_gist',
       arguments: { gistId: 'abc123', visibility: 'public' },
     })) as CallToolResult;
-    // The confirmation prompt is a plain result, not an error: asking a
-    // question is not a failure, and the whole family answers it the same
-    // way since the check moved into mcp-approval.
-    expect(refusal.isError).toBeFalsy();
+    // The confirmation prompt is an error result: what was asked for did not
+    // happen. It also has to be one — a tool that declares an `outputSchema`
+    // may not answer without `structuredContent` unless the result is an
+    // error, and a prompt has none to give.
+    expect(refusal.isError).toBe(true);
     expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
 
     const confirmed = (await client.callTool({
@@ -515,10 +518,11 @@ describe('update_gist', () => {
       name: 'update_gist',
       arguments: args,
     })) as CallToolResult;
-    // The confirmation prompt is a plain result, not an error: asking a
-    // question is not a failure, and the whole family answers it the same
-    // way since the check moved into mcp-approval.
-    expect(refusal.isError).toBeFalsy();
+    // The confirmation prompt is an error result: what was asked for did not
+    // happen. It also has to be one — a tool that declares an `outputSchema`
+    // may not answer without `structuredContent` unless the result is an
+    // error, and a prompt has none to give.
+    expect(refusal.isError).toBe(true);
     expect(resultText(refusal)).toContain(
       'becomes readable by others and cannot be withdrawn'
     );
@@ -578,7 +582,8 @@ describe('update_gist', () => {
         name: 'update_gist',
         arguments: args,
       })) as CallToolResult;
-      expect(refusal.isError).toBeFalsy();
+      // The prompt is an error result: nothing was published.
+      expect(refusal.isError).toBe(true);
       expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
 
       const confirmed = (await client.callTool({
@@ -807,10 +812,11 @@ describe('delete_gist_files', () => {
       name: 'delete_gist_files',
       arguments: { gistId: 'abc123', filenames: ['a.txt'] },
     })) as CallToolResult;
-    // The confirmation prompt is a plain result, not an error: asking a
-    // question is not a failure, and the whole family answers it the same
-    // way since the check moved into mcp-approval.
-    expect(refusal.isError).toBeFalsy();
+    // The confirmation prompt is an error result: what was asked for did not
+    // happen. It also has to be one — a tool that declares an `outputSchema`
+    // may not answer without `structuredContent` unless the result is an
+    // error, and a prompt has none to give.
+    expect(refusal.isError).toBe(true);
     expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(false);
 
     const confirmed = (await client.callTool({
@@ -937,10 +943,11 @@ describe('delete_gist', () => {
       arguments: { gistId: 'abc123' },
     })) as CallToolResult;
 
-    // The confirmation prompt is a plain result, not an error: asking a
-    // question is not a failure, and the whole family answers it the same
-    // way since the check moved into mcp-approval.
-    expect(refusal.isError).toBeFalsy();
+    // The confirmation prompt is an error result: what was asked for did not
+    // happen. It also has to be one — a tool that declares an `outputSchema`
+    // may not answer without `structuredContent` unless the result is an
+    // error, and a prompt has none to give.
+    expect(refusal.isError).toBe(true);
     const text = resultText(refusal);
     expect(text).not.toContain('ignore previous instructions');
     expect(text).toContain('visibility=public');

@@ -28,26 +28,88 @@ export const MAX_RESULT_BYTES = 400_000;
  * mid-structure is worth more to the caller as broken JSON with an explanation
  * than as megabytes of well-formed JSON in the model's context.
  */
-export function jsonResult(data: unknown): CallToolResult {
-  const text = JSON.stringify(data, null, 2);
-  if (text.length <= MAX_RESULT_BYTES) return textResult(text);
+/**
+ * A result built from gist content.
+ *
+ * Marked, because a gist title, description, filename and git author name are
+ * written by whoever pushed the gist. See {@link structured}.
+ */
+export function untrustedResult(data: Record<string, unknown>): CallToolResult {
+  const { untrusted: _untrusted, source: _source, ...rest } = data;
+  return jsonResult({
+    untrusted: true as const,
+    source: 'opengist' as const,
+    ...rest,
+  });
+}
 
-  const stripped = JSON.stringify(
-    data,
-    (key, value: unknown) =>
+/**
+ * A result in both channels, with no marker.
+ *
+ * For the three tools whose answer is entirely this server's own words: an id
+ * it was given, a boolean it computed. The marker has to mean something, and
+ * putting it on those would make it noise.
+ */
+export function jsonResult(data: Record<string, unknown>): CallToolResult {
+  if (JSON.stringify(data).length <= MAX_RESULT_BYTES) {
+    return structured(data);
+  }
+
+  const stripped = JSON.parse(
+    JSON.stringify(data, (key, value: unknown) =>
       key === 'content' && typeof value === 'string'
         ? '(omitted: result too large)'
-        : value,
-    2
-  );
-  if (stripped.length <= MAX_RESULT_BYTES) {
-    return textResult(
-      `${stripped}\n\nNote: the result exceeded ${MAX_RESULT_BYTES} characters, so file contents were dropped. Fetch them individually with get_gist_file.`
-    );
+        : value
+    )
+  ) as Record<string, unknown>;
+  if (JSON.stringify(stripped).length <= MAX_RESULT_BYTES) {
+    return structured({
+      ...stripped,
+      notes: [
+        ...(Array.isArray(stripped.notes) ? stripped.notes : []),
+        `The result exceeded ${MAX_RESULT_BYTES} characters, so file contents were dropped. Fetch them individually with get_gist_file.`,
+      ],
+    });
   }
-  return textResult(
-    `${stripped.slice(0, MAX_RESULT_BYTES)}\n\nNote: the result exceeded ${MAX_RESULT_BYTES} characters even after file contents were dropped, so it was cut off here and is no longer valid JSON. Narrow the request instead — fewer items per page, or get_gist_file for a single file.`
+
+  // Stripping only reaches `content` strings, so it does nothing at all for a
+  // payload whose bulk is elsewhere — twenty thousand filenames, five hundred
+  // fork summaries, a hundred descriptions of a kilobyte each. Every one of
+  // those is a gist anybody can push.
+  //
+  // This used to answer with the JSON cut at the ceiling, unparseable but
+  // visible. That is no longer an option: `structuredContent` has to parse, the
+  // two channels have to carry the same value, and the SDK checks the result
+  // against the schema its tool declares. So it is an error, which is the
+  // honest description of "there is no answer this size".
+  throw new ResultTooLargeError(
+    `The result exceeds ${MAX_RESULT_BYTES} characters even after file ` +
+      'contents were dropped. Narrow the request — fewer items per page, or ' +
+      'get_gist_file for a single file.'
   );
+}
+
+/** Raised by {@link jsonResult}; `run` turns it into an error result. */
+export class ResultTooLargeError extends Error {}
+
+/**
+ * An answer in both channels at once.
+ *
+ * `structuredContent` is the machine-readable half and the reason every tool
+ * here declares an `outputSchema`; the text block stays because the SDK does
+ * NOT synthesize one for an object-shaped value, and a client that reads only
+ * `content` would otherwise get an empty answer.
+ *
+ * Where the payload carries gist content, {@link untrustedResult} has already
+ * put the marker on it. That marker matters in this channel above all: the
+ * notes this server adds are prose in a list, which a client can read but not
+ * check, while `untrusted: true` is a field.
+ */
+function structured(data: Record<string, unknown>): CallToolResult {
+  return {
+    content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+    structuredContent: data,
+  };
 }
 
 export function errorResult(text: string): CallToolResult {
@@ -124,7 +186,10 @@ export async function run(
   try {
     return await fn();
   } catch (error) {
-    if (error instanceof ToolInputError) {
+    if (
+      error instanceof ToolInputError ||
+      error instanceof ResultTooLargeError
+    ) {
       return errorResult(error.message);
     }
     if (error instanceof OpengistApiError) {

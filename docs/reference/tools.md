@@ -8,6 +8,14 @@ curated seven — see
 Fourteen tools. With `OPENGIST_READ_ONLY=true` only the eight reading tools are
 registered — the writing ones do not appear in `tools/list` at all.
 
+Every tool declares an `outputSchema` and answers with `structuredContent` beside
+the text block, so a client can use a result without parsing prose. Every tool
+that reports gist content carries `untrusted: true` and `source: "opengist"` as
+fields of that object — the note in `notes` is prose a client can read but not
+check, and the field is what makes it checkable. `check_gist_like`,
+`set_gist_like` and `delete_gist` are without it: their answer is an id they were
+given and a boolean.
+
 [[toc]]
 
 ## Reading

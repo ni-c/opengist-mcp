@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { gistSummary, notes, untrustedFields } from '../output-schema.js';
 import {
   gistScope,
   since,
@@ -17,7 +18,7 @@ import {
 import type { OpengistApi } from '../api.js';
 import { READ_ONLY } from './annotations.js';
 import { parsePagination } from '../pagination.js';
-import { jsonResult, run } from '../result.js';
+import { run, untrustedResult } from '../result.js';
 import { listPath } from './gists.js';
 
 /** Pages are 100 items each; scanning more than this is never worth the wait. */
@@ -96,6 +97,21 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
           ),
       }),
       annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        query: z.string(),
+        in: z.array(z.string()).describe('The fields that were scanned.'),
+        scope: z.string(),
+        username: z.string().optional(),
+        matches: z.array(gistSummary),
+        scanned: z.object({
+          pages: z.number().int(),
+          gists: z.number().int(),
+          totalAvailable: z.number().int().nullable(),
+        }),
+        truncated: z.boolean(),
+        notes,
+      }),
     },
     ({
       query,
@@ -205,7 +221,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
         );
         if (matchedUntrustedMetadata) notes.push(UNTRUSTED_METADATA_NOTE);
 
-        return jsonResult({
+        return untrustedResult({
           query,
           in: fields,
           scope,

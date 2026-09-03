@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { untrustedFields } from '../output-schema.js';
+import { record, untrustedFields } from '../output-schema.js';
 
 import { OpengistApiError, type OpengistApi } from '../api.js';
 import { READ_ONLY } from './annotations.js';
@@ -57,8 +57,7 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
       outputSchema: z.object({
         ...untrustedFields,
         self: z.boolean().describe('True when no argument named someone else.'),
-        user: z
-          .looseObject({})
+        user: record
           .nullable()
           .describe('An allowlist of the record, email included when self.'),
       }),

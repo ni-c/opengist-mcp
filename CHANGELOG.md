@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The advertised schemas avoid spellings that are legal JSON Schema and still
+  get a tool refused, or its constraint silently dropped, by some MCP clients:
+  an open object now writes `"additionalProperties": true` rather than the
+  empty schema `{}` zod emits for it; and a nullable field is written as
+  `anyOf` branches rather than `"type": ["string", "null"]`, which several
+  clients read as a single type and then drop. What the tools accept and return
+  is unchanged; only the way the schema says so is.
+
 - A result too large even after file contents are dropped is now an error. It
   used to answer with the JSON cut at the ceiling — unparseable, but visible —
   and that is not something `structuredContent` can carry, nor something the

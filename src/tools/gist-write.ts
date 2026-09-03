@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { gistDetail, notes, untrustedFields } from '../output-schema.js';
+import { gistDetailWith, notes, untrustedFields } from '../output-schema.js';
 import {
   buildFilesPayload,
   Notes,
@@ -130,7 +130,7 @@ export function registerGistWriteTools(
         idempotentHint: false,
         openWorldHint: false,
       },
-      outputSchema: gistDetail.extend({
+      outputSchema: gistDetailWith({
         ...untrustedFields,
         created: z.literal(true),
         notes,
@@ -332,7 +332,7 @@ export function registerGistWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
-      outputSchema: gistDetail.extend({
+      outputSchema: gistDetailWith({
         ...untrustedFields,
         updated: z.literal(true),
         changed: z.object({
@@ -554,7 +554,7 @@ export function registerGistWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
-      outputSchema: gistDetail.extend({
+      outputSchema: gistDetailWith({
         ...untrustedFields,
         deletedFiles: z.array(z.string()),
         notes,
@@ -732,7 +732,7 @@ export function registerGistWriteTools(
         idempotentHint: true,
         openWorldHint: false,
       },
-      outputSchema: gistDetail.extend({
+      outputSchema: gistDetailWith({
         ...untrustedFields,
         created: z
           .boolean()

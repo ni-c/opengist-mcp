@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import {
   commit,
-  gistDetail,
+  gistDetailWith,
   gistSummary,
   notes,
   pagination,
@@ -204,7 +204,7 @@ export function registerGistReadTools(
           .describe('Include the git clone and ssh URLs (default false)'),
       }),
       annotations: READ_ONLY,
-      outputSchema: gistDetail.extend({ ...untrustedFields, notes }),
+      outputSchema: gistDetailWith({ ...untrustedFields, notes }),
     },
     ({ gistId: id, sha: revision, ...options }) =>
       run(async () => {

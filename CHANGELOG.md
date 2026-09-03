@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- #region changelog -->
 
-## [Unreleased]
+## [0.4.0] - 2026-09-03
 
 ### Added
 
@@ -65,8 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the environment, so that exit cannot leave the token behind.
 
 - A `docs/guide/approval.md` page.
-
-### Changed
 
 - **BREAKING:** the confirmation parameter is now `confirm_token`, not
   `confirmToken`. A caller that sends the old name is told the argument is
@@ -387,6 +385,7 @@ request whose target a caller can choose.
   credentials is rejected.
 
 [unreleased]: https://github.com/ni-c/opengist-mcp/compare/v0.2.1...HEAD
+[0.4.0]: https://github.com/ni-c/opengist-mcp/releases/tag/v0.4.0
 [0.2.2]: https://github.com/ni-c/opengist-mcp/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ni-c/opengist-mcp/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ni-c/opengist-mcp/compare/v0.1.0...v0.2.0

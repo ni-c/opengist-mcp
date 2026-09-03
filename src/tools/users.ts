@@ -1,8 +1,10 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { record, untrustedFields } from '../output-schema.js';
 
 import { OpengistApiError, type OpengistApi } from '../api.js';
-import { jsonResult, run, ToolInputError } from '../result.js';
+import { READ_ONLY } from './annotations.js';
+import { jsonResult, run, ToolInputError, untrustedResult } from '../result.js';
 import { gistId, gistPath, username } from '../schema.js';
 import { shapeUserDetail, type RawUser } from '../shape.js';
 
@@ -40,7 +42,7 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
       description:
         'Get an Opengist user account. Without arguments this returns the account the access token belongs to (including its email); ' +
         "with username or userId it returns that user's public profile.",
-      inputSchema: {
+      inputSchema: z.object({
         username: username
           .optional()
           .describe('Look up this username instead of the token owner'),
@@ -50,8 +52,15 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
           .positive()
           .optional()
           .describe('Look up this numeric user ID instead of the token owner'),
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        self: z.boolean().describe('True when no argument named someone else.'),
+        user: record
+          .nullable()
+          .describe('An allowlist of the record, email included when self.'),
+      }),
     },
     ({ username: name, userId }) =>
       run(async () => {
@@ -87,7 +96,7 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
               'Check that OPENGIST_URL points at the Opengist instance itself and not at a proxy or login page.'
           );
         }
-        return jsonResult({
+        return untrustedResult({
           self: name === undefined && userId === undefined,
           user: shapeUserDetail(response as RawUser),
         });
@@ -100,8 +109,17 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
       title: 'Check whether a gist is liked',
       description:
         'Report whether the token owner has liked the given gist. Also distinguishes "not liked" from "not visible to you".',
-      inputSchema: { gistId },
-      annotations: { readOnlyHint: true },
+      inputSchema: z.object({ gistId }),
+      annotations: READ_ONLY,
+      // No untrusted marker: an id this server was given and a boolean it
+      // read. The marker has to mean something, and putting it on this would
+      // make it noise.
+      outputSchema: z.object({
+        gistId: z.string(),
+        liked: z.boolean().optional(),
+        visible: z.boolean().optional(),
+        note: z.string().optional(),
+      }),
     },
     ({ gistId: id }) =>
       run(async () => {
@@ -130,13 +148,29 @@ export function registerLikeWriteTools(
       description:
         'Like or unlike a gist. Idempotent: the current state is read first and the gist is only toggled when it differs, ' +
         'so calling this twice with the same value does not undo it. Requires the user:write scope on the access token.',
-      inputSchema: {
+      inputSchema: z.object({
         gistId,
         liked: z
           .boolean()
           .describe('true to like the gist, false to remove the like'),
+      }),
+      annotations: {
+        // A marker.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { idempotentHint: true },
+      // No untrusted marker: an id this server was given and a boolean it
+      // computed. The marker has to mean something.
+      outputSchema: z.object({
+        gistId: z.string(),
+        liked: z.boolean(),
+        changed: z
+          .boolean()
+          .describe('False when it was already in that state.'),
+        note: z.string().optional(),
+      }),
     },
     ({ gistId: id, liked }) =>
       run(async () => {

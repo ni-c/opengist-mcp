@@ -1,11 +1,12 @@
 import { createRequire } from 'node:module';
+import { McpServer } from '@modelcontextprotocol/server';
+import { buildToolFilter, installToolFilter } from 'mcp-tool-allowlist';
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ALL_TOOLS, ESSENTIAL_TOOLS, READ_TOOLS } from './tools/catalogue.js';
 
 import { OpengistApi } from './api.js';
-import { buildToolFilter, installToolFilter } from './tool-filter.js';
 import type { Config } from './config.js';
-import { ConfirmationStore } from './confirm.js';
+import { ConfirmationStore, createApproval } from 'mcp-approval';
 import { registerGistReadTools } from './tools/gists.js';
 import { registerGistWriteTools } from './tools/gist-write.js';
 import { registerSearchTools } from './tools/search.js';
@@ -24,7 +25,25 @@ function packageVersion(): string {
 export function createServer(config: Config): McpServer {
   // Before anything is built: an unusable tool list should fail on the
   // way in, not leave a server running with tools quietly missing.
-  const filter = buildToolFilter(config);
+  const filter = buildToolFilter({
+    allowTools: config.allowTools,
+    denyTools: config.denyTools,
+    catalogue: {
+      all: ALL_TOOLS,
+      essential: ESSENTIAL_TOOLS,
+      ungated: READ_TOOLS,
+    },
+    names: {
+      allow: 'OPENGIST_ALLOW_TOOLS',
+      deny: 'OPENGIST_DENY_TOOLS',
+      server: 'opengist-mcp',
+    },
+    gate: {
+      closed: config.readOnly,
+      variable: 'OPENGIST_READ_ONLY',
+      noun: 'read-only mode',
+    },
+  });
 
   const api = new OpengistApi(config);
 
@@ -45,7 +64,17 @@ export function createServer(config: Config): McpServer {
   // registered and always failing: an absent tool is visible in tools/list, so
   // the model plans around it instead of retrying against a wall.
   if (!config.readOnly) {
-    registerGistWriteTools(server, api, new ConfirmationStore());
+    // One approver per server: it holds the key that seals the request state
+    // carried out through the client and back.
+    registerGistWriteTools(
+      server,
+      api,
+      new ConfirmationStore(),
+      createApproval({
+        server: 'opengist-mcp',
+        elicitation: config.elicitation,
+      })
+    );
     registerLikeWriteTools(server, api);
   }
 

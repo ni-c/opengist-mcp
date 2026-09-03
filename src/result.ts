@@ -1,4 +1,7 @@
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type {
+  CallToolResult,
+  InputRequiredResult,
+} from '@modelcontextprotocol/server';
 
 import { OpengistApiError } from './api.js';
 
@@ -6,28 +9,107 @@ export function textResult(text: string): CallToolResult {
   return { content: [{ type: 'text', text }] };
 }
 
-/** Hard ceiling on a single tool result, as a backstop behind the per-tool caps. */
-const MAX_RESULT_BYTES = 400_000;
+/**
+ * Hard ceiling on a single tool result, as a backstop behind the per-tool caps.
+ * Exported so the tests assert against the real number rather than a copy of it
+ * that can drift.
+ */
+export const MAX_RESULT_BYTES = 400_000;
 
 /**
  * Serializes a result, stripping file contents if the payload is still
  * pathologically large after the per-tool truncation.
+ *
+ * Stripping only reaches `content` strings, so it does nothing at all for a
+ * payload whose bulk is elsewhere — twenty thousand filenames, five hundred
+ * fork summaries, a hundred descriptions of a kilobyte each. Every one of those
+ * is a gist anybody can push. So the cut at the end is unconditional: this
+ * function is the ceiling it claims to be, and a result that has to be cut
+ * mid-structure is worth more to the caller as broken JSON with an explanation
+ * than as megabytes of well-formed JSON in the model's context.
  */
-export function jsonResult(data: unknown): CallToolResult {
-  const text = JSON.stringify(data, null, 2);
-  if (text.length <= MAX_RESULT_BYTES) return textResult(text);
+/**
+ * A result built from gist content.
+ *
+ * Marked, because a gist title, description, filename and git author name are
+ * written by whoever pushed the gist. See {@link structured}.
+ */
+export function untrustedResult(data: Record<string, unknown>): CallToolResult {
+  const { untrusted: _untrusted, source: _source, ...rest } = data;
+  return jsonResult({
+    untrusted: true as const,
+    source: 'opengist' as const,
+    ...rest,
+  });
+}
 
-  const stripped = JSON.stringify(
-    data,
-    (key, value: unknown) =>
+/**
+ * A result in both channels, with no marker.
+ *
+ * For the three tools whose answer is entirely this server's own words: an id
+ * it was given, a boolean it computed. The marker has to mean something, and
+ * putting it on those would make it noise.
+ */
+export function jsonResult(data: Record<string, unknown>): CallToolResult {
+  if (JSON.stringify(data).length <= MAX_RESULT_BYTES) {
+    return structured(data);
+  }
+
+  const stripped = JSON.parse(
+    JSON.stringify(data, (key, value: unknown) =>
       key === 'content' && typeof value === 'string'
         ? '(omitted: result too large)'
-        : value,
-    2
+        : value
+    )
+  ) as Record<string, unknown>;
+  if (JSON.stringify(stripped).length <= MAX_RESULT_BYTES) {
+    return structured({
+      ...stripped,
+      notes: [
+        ...(Array.isArray(stripped.notes) ? stripped.notes : []),
+        `The result exceeded ${MAX_RESULT_BYTES} characters, so file contents were dropped. Fetch them individually with get_gist_file.`,
+      ],
+    });
+  }
+
+  // Stripping only reaches `content` strings, so it does nothing at all for a
+  // payload whose bulk is elsewhere — twenty thousand filenames, five hundred
+  // fork summaries, a hundred descriptions of a kilobyte each. Every one of
+  // those is a gist anybody can push.
+  //
+  // This used to answer with the JSON cut at the ceiling, unparseable but
+  // visible. That is no longer an option: `structuredContent` has to parse, the
+  // two channels have to carry the same value, and the SDK checks the result
+  // against the schema its tool declares. So it is an error, which is the
+  // honest description of "there is no answer this size".
+  throw new ResultTooLargeError(
+    `The result exceeds ${MAX_RESULT_BYTES} characters even after file ` +
+      'contents were dropped. Narrow the request — fewer items per page, or ' +
+      'get_gist_file for a single file.'
   );
-  return textResult(
-    `${stripped}\n\nNote: the result exceeded ${MAX_RESULT_BYTES} characters, so file contents were dropped. Fetch them individually with get_gist_file.`
-  );
+}
+
+/** Raised by {@link jsonResult}; `run` turns it into an error result. */
+export class ResultTooLargeError extends Error {}
+
+/**
+ * An answer in both channels at once.
+ *
+ * `structuredContent` is the machine-readable half and the reason every tool
+ * here declares an `outputSchema`; the text block stays because the SDK does
+ * NOT synthesize one for an object-shaped value, and a client that reads only
+ * `content` would otherwise get an empty answer.
+ *
+ * Where the payload carries gist content, {@link untrustedResult} has already
+ * put the marker on it. That marker matters in this channel above all: the
+ * notes this server adds are prose in a list, which a client can read but not
+ * check, while `untrusted: true` is a field.
+ */
+function structured(data: Record<string, unknown>): CallToolResult {
+  return {
+    content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+    structuredContent: data,
+  };
 }
 
 export function errorResult(text: string): CallToolResult {
@@ -43,7 +125,10 @@ const MAX_ERROR_BODY_LENGTH = 2000;
  */
 function sanitizeErrorBody(body: string): string {
   const trimmed = body.trim();
-  if (/^(<!doctype\s|<html[\s>])/i.test(trimmed)) {
+  // Anything markup-shaped: a reverse proxy's error page or a WAF block page.
+  // The check is deliberately loose — an XML declaration, a leading comment or
+  // a doctype followed by a newline are all the same thing here.
+  if (/^(<!doctype|<html[\s>]|<\?xml|<!--)/i.test(trimmed)) {
     return '(HTML error page omitted)';
   }
   if (trimmed.length > MAX_ERROR_BODY_LENGTH) {
@@ -96,12 +181,15 @@ export class ToolInputError extends Error {
  * instead of protocol-level failures.
  */
 export async function run(
-  fn: () => Promise<CallToolResult>
-): Promise<CallToolResult> {
+  fn: () => Promise<CallToolResult | InputRequiredResult>
+): Promise<CallToolResult | InputRequiredResult> {
   try {
     return await fn();
   } catch (error) {
-    if (error instanceof ToolInputError) {
+    if (
+      error instanceof ToolInputError ||
+      error instanceof ResultTooLargeError
+    ) {
       return errorResult(error.message);
     }
     if (error instanceof OpengistApiError) {

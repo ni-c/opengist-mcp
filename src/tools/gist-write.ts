@@ -1,12 +1,7 @@
 import { createHash } from 'node:crypto';
-
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { OpengistApi } from '../api.js';
-import type { ConfirmationStore } from '../confirm.js';
-import { errorResult, jsonResult, run, ToolInputError } from '../result.js';
-import { filename, gistId, gistPath, visibility } from '../schema.js';
+import { gistDetailWith, notes, untrustedFields } from '../output-schema.js';
 import {
   buildFilesPayload,
   Notes,
@@ -14,6 +9,17 @@ import {
   type FileOp,
   type RawGist,
 } from '../shape.js';
+
+import type { OpengistApi } from '../api.js';
+import type { Approver, ConfirmationStore } from 'mcp-approval';
+import {
+  errorResult,
+  jsonResult,
+  run,
+  ToolInputError,
+  untrustedResult,
+} from '../result.js';
+import { filename, gistId, gistPath, visibility } from '../schema.js';
 
 const SUMMARY_OPTIONS = {
   includeContent: false,
@@ -58,7 +64,8 @@ async function loadWritableGist(
 export function registerGistWriteTools(
   server: McpServer,
   api: OpengistApi,
-  confirmations: ConfirmationStore
+  confirmations: ConfirmationStore,
+  approval: Approver
 ): void {
   server.registerTool(
     'create_gist',
@@ -67,9 +74,9 @@ export function registerGistWriteTools(
       description:
         'Create a new gist from one or more files. Topics cannot be set through the API. ' +
         'Expiry can only be set here, never changed afterwards. ' +
-        'visibility "public" or "unlisted" publishes the content and therefore needs a confirmToken: ' +
+        'visibility "public" or "unlisted" publishes the content and therefore needs a confirm_token: ' +
         'the first call is refused and returns one. Use "private" unless the user asked for otherwise.',
-      inputSchema: {
+      inputSchema: z.object({
         files: z
           .array(
             z.object({
@@ -95,7 +102,7 @@ export function registerGistWriteTools(
           .optional()
           .describe('Title of the gist; defaults to the first filename'),
         description: z.string().max(1000).optional(),
-        confirmToken: z
+        confirm_token: z
           .string()
           .optional()
           .describe(
@@ -113,18 +120,34 @@ export function registerGistWriteTools(
           .describe(
             'Delete the gist automatically at this RFC 3339 timestamp. Mutually exclusive with expire.'
           ),
+      }),
+      annotations: {
+        // Additive, and guarded anyway when it publishes — that risk is
+        // disclosure, not destruction, and no annotation carries it. Not
+        // idempotent: each call makes another gist.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
       },
-      annotations: {},
+      outputSchema: gistDetailWith({
+        ...untrustedFields,
+        created: z.literal(true),
+        notes,
+      }),
     },
-    ({
-      files,
-      visibility,
-      title,
-      description,
-      expire,
-      expiresAt,
-      confirmToken,
-    }) =>
+    (
+      {
+        files,
+        visibility,
+        title,
+        description,
+        expire,
+        expiresAt,
+        confirm_token,
+      },
+      mcp
+    ) =>
       run(async () => {
         if (expire !== undefined && expiresAt !== undefined) {
           throw new ToolInputError(
@@ -169,21 +192,47 @@ export function registerGistWriteTools(
             expire: expire ?? null,
             expiresAt: expiresAt ?? null,
           })}`;
-          if (!confirmations.consume(resource, confirmToken)) {
-            const token = confirmations.issue(resource);
-            const bytes = files.reduce(
-              (total, file) => total + Buffer.byteLength(file.content, 'utf8'),
-              0
-            );
-            // Only server-side counts are quoted. Filenames, title and
-            // description are caller-supplied text that would land in a
-            // confirmation prompt a model reads back.
-            return errorResult(
-              `Creating a ${visibility} gist publishes its content: ${visibility === 'public' ? 'it is listed on the instance and readable by anyone' : 'anyone with the URL can read it, and the URL may be shared onward'}. ` +
-                `This call would write ${files.length} file(s), ${bytes} byte(s) in total. Filenames, title and description are withheld here on purpose (they are supplied by the caller, not by the server) — check them in the arguments you are about to send. ` +
-                `Confirm with the user that this content may become world-readable, then call create_gist again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}" and otherwise identical arguments. Use visibility "private" if in doubt.`
-            );
+          const bytes = files.reduce(
+            (total, file) => total + Buffer.byteLength(file.content, 'utf8'),
+            0
+          );
+          // Only server-side counts are quoted. Filenames, title and
+          // description are caller-supplied text that would land in a
+          // confirmation prompt a model reads back.
+          const outcome = await approval.requestApproval(
+            server,
+            mcp,
+            confirmations,
+            {
+              // The counts go in the sentence rather than into `details`: that
+              // block is labelled as caller-supplied, and these are the one
+              // thing here the server counted itself.
+              what: `create a ${visibility} gist of ${files.length} file(s), ${bytes} byte(s) in total`,
+              consequence:
+                visibility === 'public'
+                  ? 'It is listed on the instance and readable by anyone. Content that has been read cannot be withdrawn.'
+                  : 'Anyone with the URL can read it, and the URL may be shared onward. Content that has been read cannot be withdrawn.',
+              fallbackNote:
+                'Filenames, title and description are withheld here on purpose ' +
+                '(they are supplied by the caller, not by the server) — check them ' +
+                'in the arguments you are about to send. Use visibility "private" ' +
+                'if in doubt.',
+              resourceKey: resource,
+              token: confirm_token,
+              toolName: 'create_gist',
+              hint: 'Tick to publish it, leave it to cancel.',
+            }
+          );
+          // A token that was sent and did not match is refused with the reason
+          // rather than answered with a fresh prompt; the sentence is the
+          // library's, so every server refuses in the same words.
+          if (outcome.decision === 'rejected') {
+            return errorResult(outcome.reason);
           }
+          if (outcome.decision === 'declined') {
+            return errorResult('The user declined. No gist was created.');
+          }
+          if (outcome.decision === 'pending') return outcome.result;
         }
 
         const body: Record<string, unknown> = {
@@ -201,7 +250,7 @@ export function registerGistWriteTools(
         const gist = response.data as RawGist;
         const notes = new Notes();
         const shaped = shapeGistDetail(gist, SUMMARY_OPTIONS, notes);
-        return jsonResult({
+        return untrustedResult({
           created: true,
           ...shaped,
           notes: notes.list(),
@@ -215,11 +264,15 @@ export function registerGistWriteTools(
       title: 'Update a gist',
       description:
         'Change the metadata of a gist and/or write and rename files. ' +
+        'File changes go in **fileOps**, not in `files` — `files` is what ' +
+        'create_gist takes, and passing it here is not an error: the unknown ' +
+        'key is dropped, the metadata fields apply, and the file changes ' +
+        'silently do not happen. ' +
         'Files you do not list are left untouched — never list a file just to preserve it. ' +
         'This tool can never delete a file; use delete_gist_files for that. ' +
-        'Widening the visibility (private → unlisted/public, unlisted → public) discloses the gist and therefore needs a confirmToken, ' +
-        'as does writing files into a gist that is already public or unlisted. Narrowing the visibility does not.',
-      inputSchema: {
+        'Widening the visibility (private → unlisted/public, unlisted → public) discloses the gist and therefore needs a confirm_token, ' +
+        'as does writing files, a title or a description into a gist that is already public or unlisted. Narrowing the visibility does not.',
+      inputSchema: z.object({
         gistId,
         title: z.string().max(250).optional(),
         description: z.string().max(1000).optional(),
@@ -263,24 +316,52 @@ export function registerGistWriteTools(
           .describe(
             'Allow a write operation to add a file that does not exist yet. Off by default so a typo in a filename cannot silently create a duplicate file.'
           ),
-        confirmToken: z
+        confirm_token: z
           .string()
           .optional()
           .describe(
-            'Only needed when widening the visibility. Omit on the first call; the refusal returns the token.'
+            'Only needed when widening the visibility, or when changing anything about a gist that is not private. Omit on the first call; the refusal returns the token.'
           ),
+      }),
+      annotations: {
+        // Destructive: a file operation replaces content in the current
+        // revision. Earlier revisions stay in git, but what the gist serves
+        // now is gone. Guarded additionally when the call publishes.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { idempotentHint: true },
+      outputSchema: gistDetailWith({
+        ...untrustedFields,
+        updated: z.literal(true),
+        changed: z.object({
+          title: z.boolean(),
+          description: z.boolean(),
+          visibility: z.boolean(),
+        }),
+        fileChanges: z.object({
+          written: z.array(z.string()),
+          created: z.array(z.string()),
+          renamed: z.array(z.object({ from: z.string(), to: z.string() })),
+          untouched: z.array(z.string()),
+        }),
+        previousRevision: z.string().optional(),
+        notes,
+      }),
     },
-    ({
-      gistId: id,
-      title,
-      description,
-      visibility: newVisibility,
-      fileOps,
-      allowCreate,
-      confirmToken,
-    }) =>
+    (
+      {
+        gistId: id,
+        title,
+        description,
+        visibility: newVisibility,
+        fileOps,
+        allowCreate,
+        confirm_token,
+      },
+      mcp
+    ) =>
       run(async () => {
         if (
           title === undefined &&
@@ -301,13 +382,21 @@ export function registerGistWriteTools(
           newVisibility !== undefined &&
           (VISIBILITY_RANK[newVisibility] ?? 0) >
             (VISIBILITY_RANK[current] ?? 0);
+        // A title and a description are content out of the model's context in
+        // exactly the same way a file body is — `create_gist` fingerprints all
+        // three together for that reason — and on a public gist they are the
+        // part a reader sees first, without opening a file. Gating on `fileOps`
+        // alone let a rename of the gist publish arbitrary text unannounced.
+        const changesContent =
+          fileOps !== undefined ||
+          title !== undefined ||
+          description !== undefined;
         // Writing new content into an already-public gist discloses it just as
         // surely as widening a private one — same primitive, same content out
         // of the model's context, only without a visibility change to notice.
         // A call that narrows the visibility in the same breath is not a
         // disclosure, which is why this tests the *effective* visibility.
-        const publishesContent =
-          fileOps !== undefined && effective !== 'private';
+        const publishesContent = changesContent && effective !== 'private';
 
         // Validate the operations BEFORE asking for a confirmation. A call that
         // would be rejected anyway must not first cost the user a confirmation
@@ -338,28 +427,53 @@ export function registerGistWriteTools(
               ) ?? null,
           });
           const resource = `gist:${id}:update:${effective}:${effectFingerprint}`;
-          if (!confirmations.consume(resource, confirmToken)) {
-            const token = confirmations.issue(resource);
-            const opCount = fileOps === undefined ? 0 : fileOps.length;
-            const alsoChanges = [
-              title !== undefined && 'the title',
-              description !== undefined && 'the description',
-              opCount > 0 && `${opCount} file operation(s)`,
-            ].filter((v): v is string => Boolean(v));
-            const headline = widens
-              ? `Changing the visibility of gist ${id} from ${current} to ${newVisibility} makes it readable by others and cannot be undone for anyone who already saw it. `
-              : `Gist ${id} is ${current}, so writing to it publishes the new content: ${opCount} file operation(s) whose content becomes readable by others and cannot be withdrawn from anyone who already saw it. `;
-            return errorResult(
-              headline +
-                `The gist has ${Object.keys(gist.files ?? {}).length} file(s). Title, description and filenames are withheld here on purpose (they are user-supplied text). ` +
-                (widens && alsoChanges.length > 0
-                  ? `This same call also changes ${alsoChanges.join(', ')} — confirm those too. `
-                  : widens
-                    ? 'This call changes nothing but the visibility. '
-                    : '') +
-                `Confirm with the user, then call update_gist again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}" and otherwise identical arguments — the token only works for exactly this set of changes.`
-            );
+          const opCount = fileOps === undefined ? 0 : fileOps.length;
+          // Named and counted, never quoted: which kinds of content this call
+          // publishes is server-side knowledge, while the values themselves are
+          // caller-supplied text that `fallbackNote` sends the reader to the
+          // arguments for. Without this list a title-only call would announce
+          // itself as "0 file operation(s)".
+          const changes = [
+            opCount > 0 && `${opCount} file operation(s)`,
+            title !== undefined && 'a new title',
+            description !== undefined && 'a new description',
+          ].filter((v): v is string => Boolean(v));
+          const outcome = await approval.requestApproval(
+            server,
+            mcp,
+            confirmations,
+            {
+              what: widens
+                ? `change the visibility of gist ${id} from ${current} to ${newVisibility}`
+                : `publish ${changes.join(', ')} to gist ${id}, which is ${current}`,
+              consequence: widens
+                ? 'It becomes readable by others, and that cannot be undone for anyone who already saw it.' +
+                  (changes.length > 0
+                    ? ` The same call also writes ${changes.join(', ')}.`
+                    : ' The call changes nothing but the visibility.')
+                : 'The new content becomes readable by others and cannot be withdrawn from anyone who already saw it.' +
+                  ` The gist has ${Object.keys(gist.files ?? {}).length} file(s).`,
+              fallbackNote:
+                'Title, description and filenames are withheld here on purpose ' +
+                '(they are user-supplied text). Call again with otherwise ' +
+                'identical arguments — the token only works for exactly this set ' +
+                'of changes.',
+              resourceKey: resource,
+              token: confirm_token,
+              toolName: 'update_gist',
+              hint: 'Tick to go ahead, leave it to cancel.',
+            }
+          );
+          // A token that was sent and did not match is refused with the reason
+          // rather than answered with a fresh prompt; the sentence is the
+          // library's, so every server refuses in the same words.
+          if (outcome.decision === 'rejected') {
+            return errorResult(outcome.reason);
           }
+          if (outcome.decision === 'declined') {
+            return errorResult('The user declined. The gist is unchanged.');
+          }
+          if (outcome.decision === 'pending') return outcome.result;
         }
 
         const body: Record<string, unknown> = {
@@ -391,7 +505,7 @@ export function registerGistWriteTools(
           );
         }
 
-        return jsonResult({
+        return untrustedResult({
           updated: true,
           ...shaped,
           changed: {
@@ -417,24 +531,36 @@ export function registerGistWriteTools(
       title: 'Delete files from a gist',
       description:
         'Delete one or more files from a gist. The files disappear from the current revision; older revisions keep them in the git history. ' +
-        'The first call returns a short-lived confirmation token bound to exactly these filenames; ask the user, then call again with confirmToken.',
-      inputSchema: {
+        'The first call returns a short-lived confirmation token bound to exactly these filenames; ask the user, then call again with confirm_token.',
+      inputSchema: z.object({
         gistId,
         filenames: z
           .array(filename)
           .min(1)
           .max(50)
           .describe('The files to delete'),
-        confirmToken: z
+        confirm_token: z
           .string()
           .optional()
           .describe(
             'Confirmation token from a previous delete_gist_files call for the same gist and the same files. Omit on the first call.'
           ),
+      }),
+      annotations: {
+        // Gone from the current revision; recoverable only through get_gist
+        // with an earlier sha.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { destructiveHint: true },
+      outputSchema: gistDetailWith({
+        ...untrustedFields,
+        deletedFiles: z.array(z.string()),
+        notes,
+      }),
     },
-    ({ gistId: id, filenames, confirmToken }) =>
+    ({ gistId: id, filenames, confirm_token }, mcp) =>
       run(async () => {
         const sorted = [...new Set(filenames)].sort();
         // Binding the token to the file set stops a confirmation for one file
@@ -461,27 +587,46 @@ export function registerGistWriteTools(
           );
         }
 
-        if (!confirmations.consume(resource, confirmToken)) {
-          const token = confirmations.issue(resource);
-          const previousSha = gist.commits?.[0]?.version;
-          // The filenames are deliberately NOT quoted back here. They are
-          // caller-supplied and may have been copied out of a foreign gist, so
-          // echoing them would put attacker-chosen text into a confirmation
-          // prompt. The caller already knows which files it asked for, and the
-          // token is bound to that exact set anyway.
-          return errorResult(
-            `Deleting ${sorted.length} file(s) from gist ${id}, as listed in this call's filenames argument. ` +
-              `They will be gone from the current revision${previousSha !== undefined ? ` (recoverable via get_gist with sha="${previousSha}")` : ''}. ` +
-              `Confirm the file list with the user, then call delete_gist_files again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}".`
-          );
+        const previousSha = gist.commits?.[0]?.version;
+        // The filenames are deliberately NOT quoted back here. They are
+        // caller-supplied and may have been copied out of a foreign gist, so
+        // echoing them would put attacker-chosen text into a confirmation
+        // prompt. The caller already knows which files it asked for, and the
+        // token is bound to that exact set anyway.
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `delete ${sorted.length} file(s) from gist ${id}, as listed in this call's filenames argument`,
+            consequence:
+              'They are gone from the current revision' +
+              (previousSha === undefined
+                ? '.'
+                : `, recoverable only via get_gist with sha="${previousSha}".`),
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'delete_gist_files',
+            hint: 'Tick to delete them, leave it to cancel.',
+          }
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
         }
+        if (outcome.decision === 'declined') {
+          return errorResult('The user declined. No files were deleted.');
+        }
+        if (outcome.decision === 'pending') return outcome.result;
 
         const files = Object.fromEntries(sorted.map((name) => [name, null]));
         const response = await api.patch(gistPath(id), { files });
         const updated = response.data as RawGist;
         const notes = new Notes();
         const shaped = shapeGistDetail(updated, SUMMARY_OPTIONS, notes);
-        return jsonResult({
+        return untrustedResult({
           deletedFiles: sorted,
           ...shaped,
           notes: notes.list(),
@@ -495,36 +640,72 @@ export function registerGistWriteTools(
       title: 'Delete a gist',
       description:
         'Permanently delete a gist. This is irreversible: the git repository with every revision and the database row are destroyed. ' +
-        'The first call returns a short-lived confirmation token; ask the user for confirmation, then call again with confirmToken.',
-      inputSchema: {
+        'The first call returns a short-lived confirmation token; ask the user for confirmation, then call again with confirm_token.',
+      inputSchema: z.object({
         gistId,
-        confirmToken: z
+        confirm_token: z
           .string()
           .optional()
           .describe(
             'Confirmation token from a previous delete_gist call for the same gist. Omit on the first call.'
           ),
+      }),
+      annotations: {
+        // Idempotent by the specification's wording — the second call fails,
+        // but the world is the same either way. The git repository with every
+        // revision is destroyed.
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
-      annotations: { destructiveHint: true },
+      // No untrusted marker: the id this server was given, and the fact that
+      // it is gone. Nothing from the instance survives into this answer.
+      outputSchema: z.object({
+        deleted: z.literal(true),
+        gistId: z.string(),
+      }),
     },
-    ({ gistId: id, confirmToken }) =>
+    ({ gistId: id, confirm_token }, mcp) =>
       run(async () => {
         const resource = `gist:${id}:delete`;
-        if (!confirmations.consume(resource, confirmToken)) {
-          // Fails with an API error if the gist does not exist or is invisible.
-          const gist = (await api.get(gistPath(id))) as RawGist;
-          const token = confirmations.issue(resource);
-          // Only server-side metadata is echoed here. Title, description,
-          // topics and filenames are user-supplied text and could carry
-          // instructions aimed at manufacturing a confirmation.
-          return errorResult(
-            `Deleting gist ${id} is irreversible: the git repository with all revisions is destroyed. ` +
+        // Fails with an API error if the gist does not exist or is invisible.
+        // Fetched on every call rather than only on the first: the approval now
+        // renders these counts whichever way the answer arrives, and checking
+        // that the gist is still there before deleting it is worth one GET.
+        const gist = (await api.get(gistPath(id))) as RawGist;
+        // Only server-side metadata is echoed here. Title, description, topics
+        // and filenames are user-supplied text and could carry instructions
+        // aimed at manufacturing a confirmation.
+        const outcome = await approval.requestApproval(
+          server,
+          mcp,
+          confirmations,
+          {
+            what: `delete gist ${id}`,
+            consequence:
+              'The git repository with all revisions is destroyed. This cannot be undone. ' +
               `Gist: visibility=${gist.visibility}, ${Object.keys(gist.files ?? {}).length} file(s), ` +
               `${gist.fork_count ?? 0} fork(s), ${gist.like_count ?? 0} like(s), created ${gist.created_at}` +
-              `${gist.archived ? ', archived' : ''}. Title and description are withheld on purpose (user-supplied text). ` +
-              `Confirm with the user, then call delete_gist again within ${confirmations.ttlMinutes} minutes with confirmToken: "${token}".`
-          );
+              `${gist.archived ? ', archived' : ''}.`,
+            fallbackNote:
+              'Title and description are withheld on purpose (user-supplied text).',
+            resourceKey: resource,
+            token: confirm_token,
+            toolName: 'delete_gist',
+            hint: 'Tick to delete it, leave it to cancel.',
+          }
+        );
+        // A token that was sent and did not match is refused with the reason
+        // rather than answered with a fresh prompt; the sentence is the
+        // library's, so every server refuses in the same words.
+        if (outcome.decision === 'rejected') {
+          return errorResult(outcome.reason);
         }
+        if (outcome.decision === 'declined') {
+          return errorResult('The user declined. The gist still exists.');
+        }
+        if (outcome.decision === 'pending') return outcome.result;
         await api.delete(gistPath(id));
         return jsonResult({ deleted: true, gistId: id });
       })
@@ -535,9 +716,29 @@ export function registerGistWriteTools(
     {
       title: 'Fork a gist',
       description:
-        "Fork somebody else's gist into your own account. Forking a gist you already forked returns the existing fork instead of creating a second one.",
-      inputSchema: { gistId },
-      annotations: { idempotentHint: true },
+        "Fork somebody else's gist into your own account. Forking a gist you " +
+        'already forked returns the existing fork instead of creating a second ' +
+        'one.\n\n' +
+        'You cannot fork your **own** gist: Opengist refuses with 422 "cannot ' +
+        'fork your own gist". To get a second copy of your own, read it with ' +
+        'get_gist and create a new one from its files.',
+      inputSchema: z.object({ gistId }),
+      annotations: {
+        // Additive: it copies a gist under this account and touches the
+        // original not at all. Opengist returns the existing fork rather than
+        // making a second, which is what makes it idempotent.
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      outputSchema: gistDetailWith({
+        ...untrustedFields,
+        created: z
+          .boolean()
+          .describe('False when a fork already existed and was returned.'),
+        notes,
+      }),
     },
     ({ gistId: id }) =>
       run(async () => {
@@ -550,7 +751,7 @@ export function registerGistWriteTools(
             'You had already forked this gist; the existing fork is returned instead of a new one.'
           );
         }
-        return jsonResult({
+        return untrustedResult({
           created: response.status === 201,
           ...shaped,
           notes: notes.list(),

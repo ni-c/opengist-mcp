@@ -85,8 +85,22 @@ The six write tools — `create_gist`, `update_gist`, `delete_gist_files`,
 see them in `tools/list` and cannot call them, rather than being told "no" after
 asking.
 
-Any value other than the exact string `true` counts as false. `1`, `yes` and `TRUE`
-all leave the write tools enabled.
+`true`, `1` and `yes` all turn it on, in any casing. This switch takes capability
+away, so it is read generously on purpose: a spelling an operator plausibly meant
+must not quietly leave every write tool registered. `OPENGIST_INSECURE_TLS` is the
+opposite case — it grants something — and there only the exact string `true` counts.
+
+## Turning the approval dialog off
+
+Deleting, and anything that widens a gist's visibility, ask a person through MCP
+elicitation before they act. `ELICITATION=false` takes them to the two-call token
+instead. It does not remove the guard; there is no setting in which a guarded call
+goes unannounced.
+
+The variable deliberately carries no `OPENGIST_` prefix, which means it reaches
+every MCP server in the same environment, and — unlike the booleans here — a value
+it does not recognise **stops the server** rather than failing off. See
+[Asking a person](/guide/approval).
 
 ## Choosing the tools that load
 

@@ -20,6 +20,58 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('ELICITATION', () => {
+  it('defaults to on, and to on for an empty value', () => {
+    // The only variable of this family that defaults to *on*. An unset switch
+    // has to mean "ask", or a deployment that never heard of it would quietly
+    // stop asking.
+    expect(loadConfig(env()).elicitation).toBe(true);
+    expect(loadConfig(env({ ELICITATION: '' })).elicitation).toBe(true);
+  });
+
+  it('is switched off by "false", in any casing or padding', () => {
+    for (const raw of ['false', 'FALSE', ' False ']) {
+      expect(loadConfig(env({ ELICITATION: raw })).elicitation, raw).toBe(
+        false
+      );
+    }
+  });
+
+  it('refuses to start on anything else, naming both valid values', () => {
+    // Deliberately fatal rather than falling back to the default: a typo would
+    // leave the dialog running while the operator believes it is off, and
+    // nothing else would ever tell them.
+    for (const raw of ['1', 'off', 'no']) {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
+        throw new Error('exit');
+      }) as never);
+      expect(() => loadConfig(env({ ELICITATION: raw }))).toThrow('exit');
+      expect(exit).toHaveBeenCalledWith(1);
+      const message = String(error.mock.calls[0]?.[0] ?? '');
+      expect(message, raw).toContain('ELICITATION');
+      expect(message, raw).toContain('"true"');
+      expect(message, raw).toContain('"false"');
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('has already wiped the credential by the time it can exit', () => {
+    // parseElicitation sits *after* the delete on purpose. An exit above it
+    // would leave the credential in the environment for whatever a crash
+    // reporter or an inspector does next — which is exactly what that delete
+    // exists to prevent, and its comment says so.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exit');
+    }) as never);
+    const e = env({ ELICITATION: 'nonsense' });
+    expect(() => loadConfig(e)).toThrow('exit');
+    expect(e.OPENGIST_TOKEN).toBeUndefined();
+    vi.restoreAllMocks();
+  });
+});
+
 describe('loadConfig', () => {
   it('returns the config and derives the API base URL', () => {
     expect(loadConfig(env())).toEqual({
@@ -27,6 +79,7 @@ describe('loadConfig', () => {
       baseUrl: 'https://gist.example.com/api',
       token: 'og_secret',
       readOnly: false,
+      elicitation: true,
       insecureTls: false,
     });
   });
@@ -54,10 +107,42 @@ describe('loadConfig', () => {
     expect(config.insecureTls).toBe(true);
   });
 
-  it('treats any value other than "true" as false', () => {
-    const config = loadConfig(env({ OPENGIST_READ_ONLY: 'yes' }));
-    expect(config.readOnly).toBe(false);
-  });
+  // A switch that takes capability away has to be read generously: an operator
+  // who wrote OPENGIST_READ_ONLY=1 believes they have a protection, and the
+  // strict comparison this replaced left every write tool registered without
+  // saying a word.
+  // The padded spellings are not decoration: a compose file that yields
+  // `OPENGIST_READ_ONLY=true ` is a formatting accident, and reading it as
+  // "off" is the silent failure this tolerance exists to prevent.
+  it.each(['1', 'yes', 'TRUE', 'True', 'Yes', 'true ', ' yes'])(
+    'turns read-only on for %s',
+    (value) => {
+      expect(loadConfig(env({ OPENGIST_READ_ONLY: value })).readOnly).toBe(
+        true
+      );
+    }
+  );
+
+  it.each(['', '0', 'no', 'false', 'truthy'])(
+    'leaves read-only off for %s',
+    (value) => {
+      expect(loadConfig(env({ OPENGIST_READ_ONLY: value })).readOnly).toBe(
+        false
+      );
+    }
+  );
+
+  // The mirror image: OPENGIST_INSECURE_TLS grants something — it turns
+  // certificate verification off — so an unrecognised spelling must fail
+  // towards verifying, and the strict comparison stays.
+  it.each(['1', 'yes', 'TRUE'])(
+    'does not turn certificate checking off for %s',
+    (value) => {
+      expect(
+        loadConfig(env({ OPENGIST_INSECURE_TLS: value })).insecureTls
+      ).toBe(false);
+    }
+  );
 
   it('removes the token from the environment after loading', () => {
     const environment = env();
@@ -108,6 +193,7 @@ describe('loadConfig', () => {
       baseUrl: undefined,
       token: undefined,
       readOnly: false,
+      elicitation: true,
       insecureTls: false,
     });
     expect(exit).not.toHaveBeenCalled();

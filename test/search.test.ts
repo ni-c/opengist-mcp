@@ -1,14 +1,14 @@
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult } from '@modelcontextprotocol/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  connectClient,
+  connect,
   gistFixture,
   jsonResponse,
   pageHeaders,
   resultJson,
   stubFetch,
-} from './helpers.js';
+} from './harness.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -33,7 +33,7 @@ describe('search_gists', () => {
         pageHeaders(1, 100, 2)
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'nginx' },
@@ -59,7 +59,7 @@ describe('search_gists', () => {
         pageHeaders(1, 100, 2)
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'docker compose', in: ['title'] },
@@ -76,7 +76,7 @@ describe('search_gists', () => {
         pageHeaders(1, 100, 1)
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'nginx', in: ['topics'] },
@@ -96,7 +96,7 @@ describe('search_gists', () => {
         pageHeaders(1, 100, 3)
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const byVisibility = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'note', in: ['title'], visibility: 'private' },
@@ -122,7 +122,7 @@ describe('search_gists', () => {
         pageHeaders(Number(page), 100, 200)
       );
     });
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'needle', in: ['title'], maxPages: 3 },
@@ -143,7 +143,7 @@ describe('search_gists', () => {
         pageHeaders(Number(page), 100, 1000)
       );
     });
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'needle', in: ['title'], maxPages: 2 },
@@ -164,7 +164,7 @@ describe('search_gists', () => {
         pageHeaders(1, 100, 2)
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'needle', in: ['title'], limit: 1 },
@@ -180,7 +180,7 @@ describe('search_gists', () => {
     const calls = stubFetch(() =>
       jsonResponse([], 200, pageHeaders(1, 100, 0))
     );
-    const client = await connectClient();
+    const client = await connect();
     await client.callTool({
       name: 'search_gists',
       arguments: { query: 'x', scope: 'mine', username: 'bob' },
@@ -192,7 +192,7 @@ describe('search_gists', () => {
 
   it('always states that there is no search API', async () => {
     stubFetch(() => jsonResponse([], 200, pageHeaders(1, 100, 0)));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'x' },
@@ -202,7 +202,7 @@ describe('search_gists', () => {
 
   it('rejects maxPages above the hard cap', async () => {
     const calls = stubFetch(() => jsonResponse([]));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'x', maxPages: 999 },

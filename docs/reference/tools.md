@@ -8,6 +8,14 @@ curated seven — see
 Fourteen tools. With `OPENGIST_READ_ONLY=true` only the eight reading tools are
 registered — the writing ones do not appear in `tools/list` at all.
 
+Every tool declares an `outputSchema` and answers with `structuredContent` beside
+the text block, so a client can use a result without parsing prose. Every tool
+that reports gist content carries `untrusted: true` and `source: "opengist"` as
+fields of that object — the note in `notes` is prose a client can read but not
+check, and the field is what makes it checkable. `check_gist_like`,
+`set_gist_like` and `delete_gist` are without it: their answer is an id they were
+given and a boolean.
+
 [[toc]]
 
 ## Reading
@@ -114,15 +122,15 @@ visible to you". Parameter: `gistId`.
 
 ### `create_gist`
 
-| Parameter      | Type   | Default  | Notes                                                    |
-| -------------- | ------ | -------- | -------------------------------------------------------- |
-| `files`        | array  | required | `{ filename, content }`, 1–50, content must be non-empty |
-| `visibility`   | enum   | required | `private`, `unlisted`, `public` — never implicit         |
-| `title`        | string | —        | Defaults to the first filename                           |
-| `description`  | string | —        |                                                          |
-| `expire`       | enum   | —        | `never`, `1hour`, `12hours`, `1day`, `7days`, `15days`   |
-| `expiresAt`    | string | —        | RFC 3339; mutually exclusive with `expire`               |
-| `confirmToken` | string | —        | Required for `public` and `unlisted` — see below         |
+| Parameter       | Type   | Default  | Notes                                                    |
+| --------------- | ------ | -------- | -------------------------------------------------------- |
+| `files`         | array  | required | `{ filename, content }`, 1–50, content must be non-empty |
+| `visibility`    | enum   | required | `private`, `unlisted`, `public` — never implicit         |
+| `title`         | string | —        | Defaults to the first filename                           |
+| `description`   | string | —        |                                                          |
+| `expire`        | enum   | —        | `never`, `1hour`, `12hours`, `1day`, `7days`, `15days`   |
+| `expiresAt`     | string | —        | RFC 3339; mutually exclusive with `expire`               |
+| `confirm_token` | string | —        | Required for `public` and `unlisted` — see below         |
 
 Content must be non-empty: Opengist silently drops files without content on create,
 so an empty one would vanish rather than fail.
@@ -130,7 +138,7 @@ so an empty one would vanish rather than fail.
 ::: danger Publishing needs confirmation
 `visibility: "public"` or `"unlisted"` is a disclosure event. The first call is
 refused and returns a single-use token; call again within five minutes with
-`confirmToken` and otherwise identical arguments. The token is bound to the exact
+`confirm_token` and otherwise identical arguments. The token is bound to the exact
 content, so it cannot be replayed with a different or an extra file attached.
 :::
 
@@ -141,15 +149,15 @@ Expiry can only be set at creation. There is no way to change it afterwards.
 Changes metadata and/or writes and renames files. **Files you do not list are left
 untouched** — never list a file just to preserve it.
 
-| Parameter      | Type    | Default  | Notes                                              |
-| -------------- | ------- | -------- | -------------------------------------------------- |
-| `gistId`       | string  | required |                                                    |
-| `title`        | string  | —        |                                                    |
-| `description`  | string  | —        |                                                    |
-| `visibility`   | enum    | —        |                                                    |
-| `fileOps`      | array   | —        | `write` and `rename` operations, see below         |
-| `allowCreate`  | boolean | `false`  | Permit a `write` to a filename that does not exist |
-| `confirmToken` | string  | —        |                                                    |
+| Parameter       | Type    | Default  | Notes                                              |
+| --------------- | ------- | -------- | -------------------------------------------------- |
+| `gistId`        | string  | required |                                                    |
+| `title`         | string  | —        |                                                    |
+| `description`   | string  | —        |                                                    |
+| `visibility`    | enum    | —        |                                                    |
+| `fileOps`       | array   | —        | `write` and `rename` operations, see below         |
+| `allowCreate`   | boolean | `false`  | Permit a `write` to a filename that does not exist |
+| `confirm_token` | string  | —        |                                                    |
 
 `fileOps` entries are one of:
 
@@ -182,7 +190,7 @@ retrievable with `get_gist` and a `sha`.
 Deletes files from a gist. They disappear from the current revision; older revisions
 keep them in git history.
 
-Parameters: `gistId`, `filenames` (1–50), `confirmToken`.
+Parameters: `gistId`, `filenames` (1–50), `confirm_token`.
 
 The token is bound to the exact set of filenames — a confirmation for one file cannot
 be replayed to delete another. Deleting _every_ file is refused; use `delete_gist`.
@@ -192,7 +200,7 @@ be replayed to delete another. Deleting _every_ file is refused; use `delete_gis
 Permanently deletes a gist: the git repository with every revision and the database
 row. Irreversible.
 
-Parameters: `gistId`, `confirmToken`.
+Parameters: `gistId`, `confirm_token`.
 
 The refusal quotes server-side metadata only — visibility, file count, fork count,
 like count, creation date — never the title or description.

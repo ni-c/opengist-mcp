@@ -1,6 +1,5 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import type { CallToolResult } from '@modelcontextprotocol/client';
 import { vi } from 'vitest';
 
 import type { Config } from '../src/config.js';
@@ -12,6 +11,9 @@ export const config: Config = {
   token: 'og_test',
   readOnly: false,
   insecureTls: false,
+  elicitation: true,
+  allowTools: undefined,
+  denyTools: undefined,
 };
 
 export type FetchCall = { url: string; init: RequestInit | undefined };
@@ -81,18 +83,43 @@ export function stubFetch(
   return calls;
 }
 
-export async function connectClient(
-  overrides: Partial<Config> = {}
-): Promise<Client> {
+/** How a client that can show a dialog answers it. */
+export type ElicitBehaviour = 'accept' | 'decline' | 'cancel';
+
+/**
+ * Connects a client to the real server.
+ *
+ * Without `elicit` the client declares no elicitation capability, which is the
+ * case the two-call token exists for and what every other test drives. With it,
+ * the client answers the dialog and `prompts` records what the server put in
+ * front of the user.
+ */
+export async function connect(
+  overrides: Partial<Config> = {},
+  elicit?: ElicitBehaviour
+): Promise<Client & { prompts: string[] }> {
   const server = createServer({ ...config, ...overrides });
-  const client = new Client({ name: 'test-client', version: '0.0.0' });
+  const prompts: string[] = [];
+  const client = new Client(
+    { name: 'test-client', version: '0.0.0' },
+    elicit === undefined ? {} : { capabilities: { elicitation: {} } }
+  );
+  if (elicit !== undefined) {
+    client.setRequestHandler('elicitation/create', (request) => {
+      const params = request.params as { message?: string };
+      prompts.push(params.message ?? '');
+      if (elicit === 'cancel') return { action: 'cancel' };
+      if (elicit === 'decline') return { action: 'decline' };
+      return { action: 'accept', content: { confirm: true } };
+    });
+  }
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
   await Promise.all([
     server.connect(serverTransport),
     client.connect(clientTransport),
   ]);
-  return client;
+  return Object.assign(client, { prompts });
 }
 
 export function resultText(result: CallToolResult): string {
@@ -158,4 +185,39 @@ export function gistFixture(
     forks: [],
     ...overrides,
   };
+}
+
+/** The confirmation token a guarded tool handed back on its first call. */
+export function tokenOf(result: CallToolResult): string {
+  const match = /confirm_token="([0-9a-f]+)"/.exec(resultText(result));
+  if (match?.[1] === undefined) {
+    throw new Error(
+      `no confirm_token in the result — did the client declare elicitation? ` +
+        `Got: ${resultText(result).slice(0, 300)}`
+    );
+  }
+  return match[1];
+}
+
+/**
+ * Runs a guarded tool through both halves of its two-call token.
+ *
+ * Takes the client rather than living on what `connect` returns, so the
+ * signature matches every other repository in this family. Only meaningful on
+ * a client that declared no elicitation: with a dialog available the server
+ * asks instead of offering a token, which is the point of the dialog.
+ */
+export async function confirmed(
+  client: Client,
+  name: string,
+  args: Record<string, unknown> = {}
+): Promise<CallToolResult> {
+  const first = (await client.callTool({
+    name,
+    arguments: args,
+  })) as CallToolResult;
+  return client.callTool({
+    name,
+    arguments: { ...args, confirm_token: tokenOf(first) },
+  }) as Promise<CallToolResult>;
 }

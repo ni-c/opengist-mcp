@@ -204,6 +204,24 @@ export function shapeGistSummary(gist: RawGist): Record<string, unknown> {
   };
 }
 
+/**
+ * Ceilings on the *number* of entries a single detail response may carry.
+ *
+ * `maxFileBytes`/`maxTotalBytes` bound the content of a file and `maxCommits`
+ * bounds the commit list, but nothing bounded how many files or forks were
+ * listed — and a gist with twenty thousand files is one `git push`, while a
+ * popular one collects forks by itself. Both then produce megabytes of pure
+ * metadata, which no per-file budget ever sees.
+ *
+ * Constants rather than tool inputs: unlike `maxCommits` these are not a
+ * choice a caller has any reason to make, they are the point past which a
+ * response stops being useful to a model at all. `maxCommits` caps out at 100,
+ * so the fork ceiling matches it; file entries are smaller, hence the higher
+ * one.
+ */
+const MAX_FILE_ENTRIES = 200;
+const MAX_FORK_ENTRIES = 100;
+
 export interface DetailOptions {
   includeContent: boolean;
   maxFileBytes: number;
@@ -259,7 +277,13 @@ export function shapeGistDetail(
     shaped.sshUrl = gist.ssh_url;
   }
 
-  const entries = Object.entries(gist.files ?? {});
+  const allEntries = Object.entries(gist.files ?? {});
+  const entries = allEntries.slice(0, MAX_FILE_ENTRIES);
+  if (allEntries.length > entries.length) {
+    notes.add(
+      `Only the first ${MAX_FILE_ENTRIES} of ${allEntries.length} files are listed here; read the others by name with get_gist_file (gistId "${id}").`
+    );
+  }
   let budgetLeft = options.maxTotalBytes;
   // These notes are prose that a model reads as server-authored guidance, so
   // they refer to a file by its index in the returned `files` array, never by
@@ -346,7 +370,13 @@ export function shapeGistDetail(
 
   const forks = gist.forks ?? [];
   if (options.includeForks) {
-    shaped.forks = forks.map(shapeGistSummary);
+    const shown = forks.slice(0, MAX_FORK_ENTRIES);
+    shaped.forks = shown.map(shapeGistSummary);
+    if (forks.length > shown.length) {
+      notes.add(
+        `Only the first ${MAX_FORK_ENTRIES} of ${forks.length} forks are shown; page through the rest with list_gist_forks.`
+      );
+    }
   } else if (forks.length > 0) {
     notes.add(
       `This gist has ${forks.length} fork(s), omitted here; call get_gist with includeForks=true or use list_gist_forks.`
@@ -388,7 +418,16 @@ export function buildFilesPayload(
   allowCreate: boolean
 ): FilesPayload {
   const payload: FilesPayload = {
-    files: {},
+    // Prototype-less, and every presence check below goes through
+    // Object.hasOwn. Filenames come from the gist, and a gist may well contain
+    // a file called `constructor`, `toString` or `__proto__`. On a plain object
+    // literal `files[name]` then answers with an inherited Object.prototype
+    // member instead of nothing: the duplicate-operation check fires for a file
+    // that was never written, and — the direction that matters — the rename
+    // collision check does not fire for one that is about to be overwritten.
+    // JSON.stringify serializes a null-prototype object identically, so the
+    // request body is unchanged.
+    files: Object.create(null) as FilesPayload['files'],
     written: [],
     created: [],
     renamed: [],
@@ -397,7 +436,7 @@ export function buildFilesPayload(
   const targets: string[] = [];
 
   for (const op of ops) {
-    if (payload.files[op.filename] !== undefined) {
+    if (Object.hasOwn(payload.files, op.filename)) {
       throw new ToolInputError(
         `Two operations refer to the file "${op.filename}". Combine them into a single operation — a rename can carry new content at the same time.`
       );
@@ -445,7 +484,7 @@ export function buildFilesPayload(
   // A rename onto an existing file (that is not itself renamed away) would let
   // the API drop one of the two silently.
   for (const { from, to } of payload.renamed) {
-    if (existing.includes(to) && payload.files[to] === undefined) {
+    if (existing.includes(to) && !Object.hasOwn(payload.files, to)) {
       throw new ToolInputError(
         `Renaming "${from}" to "${to}" would collide with the existing file "${to}". Delete or rename that file first.`
       );

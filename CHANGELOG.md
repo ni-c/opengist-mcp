@@ -7,6 +7,161 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- #region changelog -->
 
+## [Unreleased]
+
+### Added
+
+- Every tool declares an `outputSchema` and answers with `structuredContent`
+  beside the text block. A client no longer has to parse prose to use a result.
+
+  Every tool that reports gist content carries `untrusted: true` and
+  `source: "opengist"` as fields. This server has always said so in `notes`,
+  which is prose in a list — a client can read it but not check it, and the
+  field is what makes it checkable. `check_gist_like`, `set_gist_like` and
+  `delete_gist` are without it: their answer is an id they were given and a
+  boolean, and a marker on those would be noise.
+
+### Changed
+
+- The advertised schemas avoid spellings that are legal JSON Schema and still
+  get a tool refused, or its constraint silently dropped, by some MCP clients:
+  an open object now writes `"additionalProperties": true` rather than the
+  empty schema `{}` zod emits for it; and a nullable field is written as
+  `anyOf` branches rather than `"type": ["string", "null"]`, which several
+  clients read as a single type and then drop. What the tools accept and return
+  is unchanged; only the way the schema says so is.
+
+- A result too large even after file contents are dropped is now an error. It
+  used to answer with the JSON cut at the ceiling — unparseable, but visible —
+  and that is not something `structuredContent` can carry, nor something the
+  SDK would accept against the schema the tool declares.
+
+- The two-call `confirm_token` prompt is an error result. What was asked for did
+  not happen, which is what `isError` says, and a tool with an output schema may
+  not answer without `structuredContent` unless the result is an error. The text
+  is unchanged and still carries the token.
+
+- Tools that need a confirmation now **ask the user**, on clients that can show
+  a prompt. The two-call token remains for clients that cannot, so nothing that
+  works today stops working — but where a person can be asked, one is, instead
+  of a token that only proves the same call was made twice. This covers all four
+  guarded tools: `create_gist`, `update_gist`, `delete_gist_files` and
+  `delete_gist`.
+
+- `ELICITATION` switches the dialog off — `false` sends a client that could have
+  been asked down the two-call-token path instead. For a scheduled job or a test
+  harness, where a dialog is the wrong shape rather than an unwanted one.
+
+  It does **not** remove the guard: there is no setting in which a guarded call
+  goes unannounced. Two deliberate rough edges come with it. The variable is
+  **not prefixed**, so one `export ELICITATION=false` reaches every MCP server in
+  the environment — which is why a server started with it off prints a line
+  saying so, on a line of its own rather than folded into the connection message
+  people grep for a URL, and why the fallback text names the server instead of
+  blaming a client that was working fine. And a value that is neither `true` nor
+  `false` **stops the server**: it is the only variable here that defaults to
+  _on_, so failing off on a typo would leave the dialog running while the
+  operator believed it was off. It is read after `OPENGIST_TOKEN` is wiped from
+  the environment, so that exit cannot leave the token behind.
+
+- A `docs/guide/approval.md` page.
+
+### Changed
+
+- **BREAKING:** the confirmation parameter is now `confirm_token`, not
+  `confirmToken`. A caller that sends the old name is told the argument is
+  unknown. This server names every parameter in camelCase, so the old spelling
+  fitted its neighbours — but the confirmation parameter belongs to the family
+  rather than to Opengist, and the prompt text now comes from `mcp-approval`,
+  which names it `confirm_token` verbatim. A schema spelling it differently
+  would hand the model an instruction its own schema rejects.
+
+- The confirmation prompt is a **plain result rather than an error**. Asking a
+  question is not a failure, and the rest of the family answers it this way.
+
+- A `confirm_token` that does not match its arguments is **refused with the
+  reason** instead of being answered with a fresh prompt. The binding is
+  unchanged: a confirmation issued for one gist still cannot delete another.
+
+- `delete_gist` fetches the gist on every call rather than only when building a
+  prompt, so the counts shown are the same whichever way the answer arrives —
+  and the gist is confirmed to still exist before it is destroyed.
+
+- Runs on **MCP SDK 2.0**. Existing clients see the same protocol revision they
+  always did; the change is the package layout behind it, and it is what lets
+  the dialog above work on both protocol eras from one code path — including
+  behind a stateless gateway, where the older mechanism silently fell back to
+  the weaker token for every client.
+
+- The linter is **oxlint** instead of eslint plus typescript-eslint, which lifts
+  the TypeScript ceiling: typescript-eslint pins `typescript` below 6.1, so this
+  repository was held on TypeScript 6 by its linter rather than by its code.
+
+- The tool filter, the confirmation store, the host classifier and the
+  documentation-asset generator now come from **`mcp-tool-allowlist`**,
+  **`mcp-approval`**, **`mcp-internal-hosts`** and **`svg-asset-set`** rather
+  than from copies kept here — 652 fewer lines, and one place to fix each. None
+  of them has a runtime dependency of its own.
+
+- stdio is served through `serveStdio`, so the connection's era is negotiated
+  on the opening exchange rather than assumed. A client that pins the
+  `2026-07-28` era is served it; until now its `server/discover` probe was
+  answered with "Method not found" and only `2025-11-25` was on offer. A client
+  that speaks the older era sees no change — it is still pinned to one instance
+  for the life of the connection, exactly as a hand-wired
+  `StdioServerTransport` served it.
+
+### Fixed
+
+- Confirmation tokens are compared with a **constant-time** comparison. The copy
+  in this repository used `!==`, which leaks through timing how much of a guess
+  was right. Reaching a token still requires having received it in a previous
+  tool result, so this closes a margin rather than a hole.
+
+- An entry in `OPENGIST_ALLOW_TOOLS` that is not tool-name-shaped is now
+  **redacted** in the error rather than quoted back. `OPENGIST_TOKEN` and
+  `OPENGIST_ALLOW_TOOLS` are adjacent lines in every compose file, and a paste
+  into the wrong one used to print the credential into the client's log.
+
+- `MAX_RESULT_BYTES` is a **ceiling** again. The fallback for an oversized
+  result only replaced file contents, so a payload whose bulk sat anywhere else
+  — twenty thousand filenames, five hundred fork summaries, a hundred long
+  descriptions — was announced as truncated and returned in full anyway.
+  Megabytes reached the model that way. The result is now cut outright when
+  stripping is not enough, and the number of file entries and fork entries a
+  single gist detail may carry is capped like the commit list already was, each
+  with a note naming the tool that pages through the rest.
+
+- A file named `constructor`, `toString`, `valueOf`, `hasOwnProperty` or
+  `__proto__` is handled like any other. The payload builder tested for presence
+  against an object literal, so those names answered with an inherited
+  `Object.prototype` member: a rename **onto** such a file passed the collision
+  check and destroyed it, and a write **to** one was refused as a duplicate that
+  did not exist. Filenames come out of the gist, and all five are legal ones.
+
+- `OPENGIST_READ_ONLY` accepts `1` and `yes` as well as `true`, in any casing. A
+  switch that takes capability away is read generously on purpose: the exact
+  string comparison this replaces left every write tool registered without
+  saying a word. `OPENGIST_INSECURE_TLS` grants something instead, so there the
+  strict comparison stays — an unrecognised value must fail towards verifying.
+
+### Security
+
+- `update_gist` **asks before publishing a title or a description**. The gate
+  tested for file operations, so a call that changed nothing else went straight
+  to the PATCH — on a public gist, with a client that could have shown a dialog
+  and was never given one. A title and a description are content out of the
+  model's context exactly like a file body is, `create_gist` has always
+  fingerprinted all three together, and on a public gist they are the part a
+  reader sees without opening a file. The prompt names what is about to be
+  published and still quotes none of it.
+
+- `SECURITY.md` states what an approval proves and what it does not: binding to
+  one operation with one set of arguments, but not freshness. The two-call token
+  is single-use, and on a 2025-era connection the dialog answer never leaves the
+  process — the residual case, and what to do about it, is written down against
+  the day this server serves a protocol revision where it does.
+
 ## [0.3.0] - 2026-08-27
 
 ### Added

@@ -57,5 +57,5 @@ Once the server is connected to your client, these are the calls worth knowing:
 - _"Save this as a private gist"_ → `create_gist` with `visibility: "private"`.
 
 Anything that publishes or deletes will come back refused the first time, with a
-confirmation token and a description of what it would do. That is
-[by design](/guide/security#confirmation-tokens).
+confirmation token and a description of what it would do — or, where your client can
+show one, a dialog. That is [by design](/guide/approval).

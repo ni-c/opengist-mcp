@@ -1,6 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { ConfirmationStore } from '../src/confirm.js';
 import { parsePagination } from '../src/pagination.js';
 import { buildFilesPayload, looksBinary, Notes } from '../src/shape.js';
 
@@ -255,45 +254,5 @@ describe('buildFilesPayload', () => {
         false
       )
     ).toThrow(/same\.txt/);
-  });
-});
-
-describe('ConfirmationStore', () => {
-  it('accepts the issued token exactly once', () => {
-    const store = new ConfirmationStore();
-    const token = store.issue('a');
-    expect(store.consume('a', token)).toBe(true);
-    expect(store.consume('a', token)).toBe(false);
-  });
-
-  it('rejects a wrong or missing token', () => {
-    const store = new ConfirmationStore();
-    const token = store.issue('a');
-    expect(store.consume('a', undefined)).toBe(false);
-    expect(store.consume('a', 'nope')).toBe(false);
-    expect(store.consume('b', token)).toBe(false);
-  });
-
-  it('expires tokens', () => {
-    vi.useFakeTimers();
-    const store = new ConfirmationStore(1000);
-    const token = store.issue('a');
-    vi.advanceTimersByTime(1001);
-    expect(store.consume('a', token)).toBe(false);
-    vi.useRealTimers();
-  });
-
-  it('reports the TTL in minutes', () => {
-    expect(new ConfirmationStore(5 * 60 * 1000).ttlMinutes).toBe(5);
-  });
-
-  it('bounds the number of pending tokens', () => {
-    const store = new ConfirmationStore();
-    const first = store.issue('resource-0');
-    for (let i = 1; i <= 100; i++) store.issue(`resource-${i}`);
-    expect(store.consume('resource-0', first)).toBe(false);
-    expect(store.consume('resource-100', store.issue('resource-100'))).toBe(
-      true
-    );
   });
 });

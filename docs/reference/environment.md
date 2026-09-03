@@ -1,11 +1,12 @@
 # Environment variables
 
-| Variable                | Required | Default | Description                                                             |
-| ----------------------- | -------- | ------- | ----------------------------------------------------------------------- |
-| `OPENGIST_URL`          | yes      | —       | Root URL of the instance, e.g. `https://gist.example.com`               |
-| `OPENGIST_TOKEN`        | yes      | —       | Personal Access Token, starts with `og_`                                |
-| `OPENGIST_READ_ONLY`    | no       | `false` | `true` registers only the eight read tools                              |
-| `OPENGIST_INSECURE_TLS` | no       | `false` | `true` accepts self-signed certificates on the Opengist connection only |
+| Variable                | Required | Default | Description                                                                    |
+| ----------------------- | -------- | ------- | ------------------------------------------------------------------------------ |
+| `OPENGIST_URL`          | yes      | —       | Root URL of the instance, e.g. `https://gist.example.com`                      |
+| `OPENGIST_TOKEN`        | yes      | —       | Personal Access Token, starts with `og_`                                       |
+| `OPENGIST_READ_ONLY`    | no       | `false` | `true` registers only the eight read tools                                     |
+| `OPENGIST_INSECURE_TLS` | no       | `false` | `true` accepts self-signed certificates on the Opengist connection only        |
+| `ELICITATION`           | no       | `true`  | `false` replaces the approval dialog with the two-call token. **Not prefixed** |
 
 Only the exact string `true` enables a boolean. `1`, `yes` and `TRUE` are false.
 
@@ -39,6 +40,26 @@ account password pasted in its place.
 
 This is a guard rail in this process, not a boundary — the boundary is the token's
 scopes. See [Security](/guide/security#what-actually-holds).
+
+## `ELICITATION`
+
+Whether a client that _can_ show a dialog is asked before a guarded tool acts.
+Default `true`. `false` takes the two-call-token path instead — it does not remove
+the guard, and a server started with it off prints one line saying so.
+
+Two ways it differs from every other variable here:
+
+- **No prefix.** One `export ELICITATION=false` reaches every MCP server in the same
+  environment, not just this one. That is the point of it and also its risk; see
+  [Asking a person](/guide/approval).
+- **Fatal on anything else.** Where the `OPENGIST_*` booleans fail _off_ on a typo,
+  this one stops the server with exit code 1. It is the only variable here that
+  defaults to _on_, and a typo that fell back would leave the dialog running while
+  you believed it was off.
+
+Values are trimmed and matched case-insensitively. It is read _after_
+`OPENGIST_TOKEN` is deleted from `process.env`, so the fatal path cannot leave the
+token sitting there for a crash reporter.
 
 ## `OPENGIST_INSECURE_TLS`
 

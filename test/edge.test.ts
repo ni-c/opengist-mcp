@@ -1,11 +1,7 @@
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult } from '@modelcontextprotocol/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { Notes, shapeGistDetail, shapeUser } from '../src/shape.js';
-import { withQuery } from '../src/schema.js';
-
 import {
-  connectClient,
+  connect,
   gistFixture,
   jsonResponse,
   pageHeaders,
@@ -13,7 +9,11 @@ import {
   resultText,
   stubFetch,
   textResponse,
-} from './helpers.js';
+} from './harness.js';
+
+import { Notes, shapeGistDetail, shapeUser } from '../src/shape.js';
+import { MAX_RESULT_BYTES } from '../src/result.js';
+import { withQuery } from '../src/schema.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -138,7 +138,7 @@ describe('oversized results', () => {
       };
     }
     stubFetch(() => jsonResponse(gistFixture({ files })));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: {
@@ -151,6 +151,76 @@ describe('oversized results', () => {
     const text = resultText(result);
     expect(text).toContain('(omitted: result too large)');
     expect(text).toContain('get_gist_file');
+    // The strip is only worth anything if what comes back is actually small.
+    // Asserting the note alone would pass just as well on a 2.7 MB result.
+    expect(text.length).toBeLessThan(MAX_RESULT_BYTES);
+  });
+
+  it('cuts a result whose bulk is not in any file content', async () => {
+    // Stripping only replaces `content` strings. A hundred gists with a long
+    // description each carries megabytes past that replacer untouched, and
+    // every one of them is a gist anybody can push.
+    const gists = Array.from({ length: 100 }, (_, i) =>
+      gistFixture({
+        id: `g${i}`,
+        description: 'd'.repeat(30_000),
+        files: undefined,
+        commits: [],
+      })
+    );
+    stubFetch(() => jsonResponse(gists, 200, pageHeaders(1, 100, 100)));
+    const client = await connect();
+    const result = (await client.callTool({
+      name: 'list_gists',
+      arguments: { perPage: 100 },
+    })) as CallToolResult;
+
+    // It used to answer with the JSON cut at the ceiling — unparseable, but
+    // visible. That stopped being an option when every tool gained an output
+    // schema: `structuredContent` has to parse, the two channels have to carry
+    // the same value, and the SDK checks the result against what the tool says
+    // it returns. There is no answer of this size, and saying so is honest.
+    expect(result.isError).toBe(true);
+    const text = resultText(result);
+    expect(text).toContain('Narrow the request');
+  });
+
+  it('caps how many files one gist detail may list', async () => {
+    // 20 000 files is one `git push`, and nothing bounded the *number* of
+    // entries — only the content inside each one.
+    const files: Record<string, unknown> = {};
+    for (let i = 0; i < 1000; i++) {
+      files[`f${i}.txt`] = { filename: `f${i}.txt`, size: 1, content: 'x' };
+    }
+    stubFetch(() => jsonResponse(gistFixture({ files })));
+    const client = await connect();
+    const result = (await client.callTool({
+      name: 'get_gist',
+      arguments: { gistId: 'abc123' },
+    })) as CallToolResult;
+
+    const body = resultJson(result);
+    expect((body.files as unknown[]).length).toBe(200);
+    // The true count still reaches the model, just not as 1000 entries.
+    expect(body.fileCount).toBe(1000);
+    expect(String(body.notes)).toContain('first 200 of 1000 files');
+  });
+
+  it('caps how many forks one gist detail may list', () => {
+    const notes = new Notes();
+    const shaped = shapeGistDetail(
+      {
+        id: 'a',
+        files: {},
+        commits: [],
+        forks: Array.from({ length: 500 }, (_, i) => ({ id: `f${i}` })),
+      },
+      FULL_OPTIONS,
+      notes
+    );
+    expect((shaped.forks as unknown[]).length).toBe(100);
+    expect(notes.list().join(' ')).toContain('first 100 of 500 forks');
+    expect(notes.list().join(' ')).toContain('list_gist_forks');
   });
 });
 
@@ -160,7 +230,7 @@ describe('api response handling', () => {
   // and echoing arbitrary text would defeat the allowlist.
   it('reports a non-JSON body instead of passing it through', async () => {
     stubFetch(() => textResponse('plain text body'));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_user',
       arguments: {},
@@ -179,7 +249,7 @@ describe('api response handling', () => {
           headers: { 'content-type': 'application/json' },
         })
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_user',
       arguments: {},
@@ -190,7 +260,7 @@ describe('api response handling', () => {
 
   it('reports an empty body', async () => {
     stubFetch(() => new Response('', { status: 200 }));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_user',
       arguments: {},
@@ -201,7 +271,7 @@ describe('api response handling', () => {
 
   it('explains a 409 conflict', async () => {
     stubFetch(() => jsonResponse({ message: 'taken' }, 409));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: {},
@@ -211,7 +281,7 @@ describe('api response handling', () => {
 
   it('explains a 422 validation failure', async () => {
     stubFetch(() => jsonResponse({ message: 'invalid' }, 422));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'create_gist',
       arguments: {
@@ -229,7 +299,7 @@ describe('api response handling', () => {
         throw new Error('connect ECONNREFUSED');
       })
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'list_gists',
       arguments: {},
@@ -242,7 +312,7 @@ describe('api response handling', () => {
 describe('likes error propagation', () => {
   it('propagates a non-404 error from the like check', async () => {
     stubFetch(() => jsonResponse({ message: 'boom' }, 500));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'check_gist_like',
       arguments: { gistId: 'abc123' },
@@ -257,7 +327,7 @@ describe('likes error propagation', () => {
         ? jsonResponse({ message: 'not found' }, 404)
         : jsonResponse({ message: 'boom' }, 500)
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'check_gist_like',
       arguments: { gistId: 'abc123' },
@@ -268,7 +338,7 @@ describe('likes error propagation', () => {
 
   it('refuses to like a gist that is not visible', async () => {
     const calls = stubFetch(() => jsonResponse({ message: 'not found' }, 404));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'set_gist_like',
       arguments: { gistId: 'abc123', liked: true },
@@ -304,7 +374,7 @@ describe('search edge cases', () => {
         pageHeaders(1, 100, 2)
       )
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'needle', in: ['description', 'owner'] },
@@ -317,7 +387,7 @@ describe('search edge cases', () => {
 
   it('handles a scope with no gists at all', async () => {
     stubFetch(() => jsonResponse([], 200, pageHeaders(1, 100, 0)));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'x' },
@@ -330,7 +400,7 @@ describe('search edge cases', () => {
 
   it('reports the missing total when the list endpoint sends no headers', async () => {
     stubFetch(() => jsonResponse([gistFixture({ title: 'needle' })]));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'search_gists',
       arguments: { query: 'needle', in: ['title'] },
@@ -352,7 +422,7 @@ describe('response size ceiling', () => {
           },
         })
     );
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123' },
@@ -383,7 +453,7 @@ describe('response size ceiling', () => {
         headers: { 'content-type': 'application/json' },
       });
     });
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123' },
@@ -394,7 +464,7 @@ describe('response size ceiling', () => {
 
   it('lets a normal body through untouched', async () => {
     stubFetch(() => jsonResponse(gistFixture({ title: 'small' })));
-    const client = await connectClient();
+    const client = await connect();
     const result = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123' },

@@ -1,9 +1,6 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-
-import type { OpengistApi } from '../api.js';
-import { parsePagination } from '../pagination.js';
-import { jsonResult, run } from '../result.js';
+import { gistSummary, notes, untrustedFields } from '../output-schema.js';
 import {
   gistScope,
   since,
@@ -18,6 +15,10 @@ import {
   type RawGist,
 } from '../shape.js';
 
+import type { OpengistApi } from '../api.js';
+import { READ_ONLY } from './annotations.js';
+import { parsePagination } from '../pagination.js';
+import { run, untrustedResult } from '../result.js';
 import { listPath } from './gists.js';
 
 /** Pages are 100 items each; scanning more than this is never worth the wait. */
@@ -51,7 +52,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
         'Opengist has no search API, so this pages through the list endpoints and filters client-side — it is therefore bounded and can be incomplete; ' +
         'the result always says how much was scanned and whether it was cut short. ' +
         'Searching inside file contents is not supported (it would mean downloading every file of every gist): narrow the field here, then read candidates with get_gist.',
-      inputSchema: {
+      inputSchema: z.object({
         query: z
           .string()
           .min(1)
@@ -94,8 +95,23 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
           .describe(
             `Pages of ${SCAN_PER_PAGE} gists to scan at most (1-${MAX_PAGES})`
           ),
-      },
-      annotations: { readOnlyHint: true },
+      }),
+      annotations: READ_ONLY,
+      outputSchema: z.object({
+        ...untrustedFields,
+        query: z.string(),
+        in: z.array(z.string()).describe('The fields that were scanned.'),
+        scope: z.string(),
+        username: z.string().optional(),
+        matches: z.array(gistSummary),
+        scanned: z.object({
+          pages: z.number().int(),
+          gists: z.number().int(),
+          totalAvailable: z.number().int().nullable(),
+        }),
+        truncated: z.boolean(),
+        notes,
+      }),
     },
     ({
       query,
@@ -205,7 +221,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
         );
         if (matchedUntrustedMetadata) notes.push(UNTRUSTED_METADATA_NOTE);
 
-        return jsonResult({
+        return untrustedResult({
           query,
           in: fields,
           scope,

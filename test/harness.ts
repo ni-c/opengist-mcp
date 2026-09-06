@@ -144,16 +144,16 @@ export function gistFixture(
   return {
     id: 'abc123',
     slug_url: 'abc123',
-    owner: { id: 1, username: 'willi', login: 'willi' },
+    owner: { id: 1, username: 'you', login: 'you' },
     title: 'notes.md',
-    html_url: 'http://gist.test/willi/abc123',
+    html_url: 'http://gist.test/you/abc123',
     description: 'some notes',
     public: true,
     visibility: 'public',
     like_count: 0,
     fork_count: 0,
-    clone_url: 'http://gist.test/willi/abc123.git',
-    ssh_url: 'ssh://gist.test:2222/willi/abc123.git',
+    clone_url: 'http://gist.test/you/abc123.git',
+    ssh_url: 'ssh://gist.test:2222/you/abc123.git',
     topics: [],
     archived: false,
     created_at: '2026-01-01T00:00:00Z',
@@ -172,7 +172,7 @@ export function gistFixture(
     commits: [
       {
         version: 'aaaa1111bbbb2222cccc3333dddd4444eeee5555',
-        author: { name: 'willi', email: 'willi@example.com' },
+        author: { name: 'you', email: 'you@example.com' },
         change_status: {
           files_changed: 1,
           additions: 1,

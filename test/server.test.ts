@@ -409,9 +409,7 @@ describe('get_gist', () => {
       name: 'get_gist',
       arguments: { gistId: 'abc123', includeCloneUrls: true },
     })) as CallToolResult;
-    expect(resultJson(with_).cloneUrl).toBe(
-      'http://gist.test/willi/abc123.git'
-    );
+    expect(resultJson(with_).cloneUrl).toBe('http://gist.test/you/abc123.git');
   });
 });
 
@@ -535,7 +533,7 @@ describe('list_gist_commits and list_gist_forks', () => {
 
 describe('get_user', () => {
   it('returns the token owner without arguments', async () => {
-    const calls = stubFetch(() => jsonResponse({ username: 'willi' }));
+    const calls = stubFetch(() => jsonResponse({ username: 'you' }));
     const client = await connect();
     const result = (await client.callTool({
       name: 'get_user',

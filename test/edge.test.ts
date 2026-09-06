@@ -114,9 +114,9 @@ describe('shapeUser', () => {
   });
 
   it('keeps only id and username', () => {
-    expect(shapeUser({ id: 1, username: 'willi', created_at: 'x' })).toEqual({
+    expect(shapeUser({ id: 1, username: 'you', created_at: 'x' })).toEqual({
       id: 1,
-      username: 'willi',
+      username: 'you',
     });
   });
 });

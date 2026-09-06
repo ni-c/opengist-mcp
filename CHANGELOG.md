@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   together, and neither is something an installed server needs. The sources are
   on GitHub, tagged per release.
 
+### Fixed
+
+- `prepublishOnly` runs the linter and the test suite again. It had been reduced
+  to `typecheck && build`, so `npm publish` from a workstation would have shipped
+  a package whose tests were never run — the one moment that check matters most.
+  CI was unaffected and stays the real gate; this closes the local path.
+
 [Unreleased]: https://github.com/ni-c/opengist-mcp/compare/v0.4.0...HEAD
 
 ## [0.4.0] - 2026-09-03

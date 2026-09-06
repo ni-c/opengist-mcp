@@ -29,7 +29,7 @@
   "main": "dist/index.js",
   "files": [
     "dist",
-    "src"
+    "!dist/**/*.map"
   ],
   "engines": {
     "node": ">=22"

@@ -1,16 +1,19 @@
 # opengist-mcp
 
+<!-- badges: start -->
+
 [![CI](https://img.shields.io/github/actions/workflow/status/ni-c/opengist-mcp/ci.yml?branch=main&label=CI)](https://github.com/ni-c/opengist-mcp/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ni-c/opengist-mcp/badge)](https://scorecard.dev/viewer/?uri=github.com/ni-c/opengist-mcp)
+<a href="https://socket.dev/npm/package/opengist-mcp"><img src="https://socket.dev/api/badge/npm/package/opengist-mcp" alt="Socket supply-chain report" height="20"></a>
+[![Glama score](https://glama.ai/mcp/servers/ni-c/opengist-mcp/badges/score.svg)](https://glama.ai/mcp/servers/ni-c/opengist-mcp)
+<br>
 [![npm version](https://img.shields.io/npm/v/opengist-mcp)](https://www.npmjs.com/package/opengist-mcp)
-[![npm downloads](https://img.shields.io/npm/dm/opengist-mcp)](https://www.npmjs.com/package/opengist-mcp)
-[![node](https://img.shields.io/node/v/opengist-mcp)](https://nodejs.org)
-[![license](https://img.shields.io/npm/l/opengist-mcp)](LICENSE)
-[![container](https://img.shields.io/badge/ghcr.io-ni--c%2Fopengist--mcp-blue)](https://github.com/ni-c/opengist-mcp/pkgs/container/opengist-mcp)
-[![docs](https://img.shields.io/badge/docs-opengist--mcp.ni--c.de-informational)](https://opengist-mcp.ni-c.de)
-[![HTTP • via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-6f42c1)](https://mcp-hub.ni-c.de)
-[![Glama](https://glama.ai/mcp/servers/ni-c/opengist-mcp/badges/score.svg)](https://glama.ai/mcp/servers/ni-c/opengist-mcp)
+[![container image](https://img.shields.io/badge/ghcr.io-ni--c%2Fopengist--mcp-4f46e5?logo=docker&logoColor=white)](https://github.com/ni-c/opengist-mcp/pkgs/container/opengist-mcp)
+[![HTTP via mcp-hub](https://img.shields.io/badge/HTTP-via%20mcp--hub-4f46e5?logo=modelcontextprotocol&logoColor=white)](https://mcp-hub.ni-c.de)
+<br>
+[![docs](https://img.shields.io/badge/docs-opengist--mcp.ni--c.de-4f46e5?logo=readthedocs&logoColor=white)](https://opengist-mcp.ni-c.de)
 [![sponsor](https://img.shields.io/badge/sponsor-ni--c-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ni-c)
+<!-- badges: end -->
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Opengist](https://github.com/thomiceli/opengist), the self-hosted pastebin powered by Git.
 

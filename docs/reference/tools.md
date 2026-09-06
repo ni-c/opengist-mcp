@@ -22,6 +22,8 @@ given and a boolean.
 
 ### `list_gists`
 
+**essential**
+
 Lists gist summaries — no file contents. Use `get_gist` for those.
 
 | Parameter  | Type   | Default | Notes                                                     |
@@ -38,6 +40,8 @@ The API does not fail in that case — it silently returns only the public ones.
 :::
 
 ### `get_gist`
+
+**essential**
 
 One gist including its file contents, optionally at an older revision.
 
@@ -60,6 +64,8 @@ A 404 means the gist does not exist **or** is invisible to this token. It does n
 mean it was deleted.
 
 ### `get_gist_file`
+
+**essential**
 
 The raw content of one file, optionally at a revision and from a byte offset. This
 is what you use to page through a file `get_gist` truncated.
@@ -84,6 +90,8 @@ Parameters: `gistId` (required), `page`, `perPage`.
 The gists forked from this one. Parameters: `gistId` (required), `page`, `perPage`.
 
 ### `search_gists`
+
+**essential**
 
 Opengist has no search endpoint, so this pages through the list endpoints and filters
 client-side. It is bounded by design and the result always says how much it scanned
@@ -120,7 +128,9 @@ visible to you". Parameter: `gistId`.
 
 ## Writing
 
-### `create_gist`
+### `create_gist` 👤
+
+**essential**
 
 | Parameter       | Type   | Default  | Notes                                                    |
 | --------------- | ------ | -------- | -------------------------------------------------------- |
@@ -144,7 +154,9 @@ content, so it cannot be replayed with a different or an extra file attached.
 
 Expiry can only be set at creation. There is no way to change it afterwards.
 
-### `update_gist`
+### `update_gist` 👤
+
+**essential**
 
 Changes metadata and/or writes and renames files. **Files you do not list are left
 untouched** — never list a file just to preserve it.
@@ -185,7 +197,7 @@ when the same call makes the gist private, or for metadata-only changes.
 The response reports `previousRevision`, so the state before the change stays
 retrievable with `get_gist` and a `sha`.
 
-### `delete_gist_files`
+### `delete_gist_files` 👤
 
 Deletes files from a gist. They disappear from the current revision; older revisions
 keep them in git history.
@@ -195,7 +207,9 @@ Parameters: `gistId`, `filenames` (1–50), `confirm_token`.
 The token is bound to the exact set of filenames — a confirmation for one file cannot
 be replayed to delete another. Deleting _every_ file is refused; use `delete_gist`.
 
-### `delete_gist`
+### `delete_gist` 👤
+
+**essential**
 
 Permanently deletes a gist: the git repository with every revision and the database
 row. Irreversible.

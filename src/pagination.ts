@@ -11,7 +11,12 @@ export interface Pagination {
 }
 
 function parseInteger(value: string | null): number | null {
-  if (value === null) return null;
+  // An empty or blank header is not a zero. `Number('')` and `Number(' ')` are
+  // both 0, which passes every check below and turns a header the instance sent
+  // empty into a claim: page 0, which does not exist in a 1-based scheme, or a
+  // total of zero gists on an account that has some. Absent is the honest
+  // reading, and it falls back to what the caller asked for.
+  if (value === null || value.trim() === '') return null;
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }

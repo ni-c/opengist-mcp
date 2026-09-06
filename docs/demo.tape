@@ -1,22 +1,27 @@
-# vhs script for the demo GIF: `vhs docs/demo.tape` writes public/demo.gif
+# vhs script for the demo GIF: `vhs docs/demo.tape` writes docs/public/demo.gif
 #
 # Prerequisites:
 #   * vhs installed (https://github.com/charmbracelet/vhs)
-#   * the server built (npm run build) and a reachable Opengist instance
-#   * export OPENGIST_URL / OPENGIST_TOKEN before running
+#   * the server built (npm run build)
+#   * run it from the repository root, not from docs/
+#
+# No credentials, on purpose: the server starts without an API key, so this tape
+# is reproducible by anyone from a fresh clone, and what it demonstrates — the
+# tool filter — is the part a screenshot of somebody else's dashboard cannot show.
 #
 # Rules learned the hard way:
 #   * inside Hide blocks use vhs's own `Sleep`, never the shell's — shell sleep
 #     blocks and the tape ends before any output is recorded
-#   * MCP meta-tools need `arguments: {}` explicitly; it cannot be omitted
-#   * start from the running server, do not record the setup
-#   * only read-only tools here: this records against a real instance
+#   * `-e` goes AFTER the command being launched, and the Inspector does not
+#     inherit the shell environment: `X=1 npx … inspector …` silently applies
+#     nothing at all
+#   * three beats, no more
 
-Output public/demo.gif
+Output docs/public/demo.gif
 
 Set FontSize 16
 Set Width 1200
-Set Height 640
+Set Height 460
 Set Padding 20
 Set Theme "Catppuccin Mocha"
 
@@ -25,13 +30,17 @@ Type "clear" Enter
 Sleep 500ms
 Show
 
-Type "# 1. the server is configured and built" Enter
-Sleep 1s
-Type "# 2. list what it exposes" Enter
-Sleep 1s
-Type "npx -y @modelcontextprotocol/inspector --cli node dist/index.js --method tools/list | jq -r '.tools[].name'" Enter
+Type "# fourteen tools" Enter
+Sleep 800ms
+Type "npx -y @modelcontextprotocol/inspector --cli node dist/index.js --method tools/list 2>/dev/null | jq -r '.tools[].name' | paste -sd' '" Enter
+Sleep 12s
+
+Type "# or seven, curated" Enter
+Sleep 800ms
+Type "npx -y @modelcontextprotocol/inspector --cli node dist/index.js -e OPENGIST_ALLOW_TOOLS=essential --method tools/list 2>/dev/null | jq -r '.tools[].name' | paste -sd' '" Enter
+Sleep 12s
+
+Type "# a typo stops the server instead of quietly hiding a tool" Enter
+Sleep 800ms
+Type "OPENGIST_ALLOW_TOOLS=list_gistz node dist/index.js 2>&1 | tail -1 | fold -sw 100" Enter
 Sleep 6s
-Type "# 3. read-only: list my gists" Enter
-Sleep 1s
-Type "npx -y @modelcontextprotocol/inspector --cli node dist/index.js --method tools/call --tool-name list_gists --tool-arg scope=mine | head -30" Enter
-Sleep 8s

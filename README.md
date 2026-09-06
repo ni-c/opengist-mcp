@@ -31,6 +31,8 @@ reliably from seven than from fourteen — see
   <img src="https://opengist-mcp.ni-c.de/architecture.svg" alt="An MCP client speaks stdio to opengist-mcp, which calls the Opengist REST API over HTTPS; the token stays in the server process and every response is shaped before it reaches the model" width="800">
 </picture>
 
+![Listing the tools, narrowing them to the essential preset, and the startup abort a mistyped tool name produces](https://opengist-mcp.ni-c.de/demo.gif)
+
 > **Note:** this server talks to the Opengist REST API under `/api`, which is available in recent Opengist releases and enabled by default (`api.enabled`). A running instance serves its own OpenAPI spec at `GET /api/openapi.yaml` — compare it against your version if a tool behaves unexpectedly.
 
 ## What makes it different

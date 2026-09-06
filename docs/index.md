@@ -83,6 +83,8 @@ features:
 <figcaption>The token never leaves this process, and nothing the API returns reaches the model unshaped.</figcaption>
 </figure>
 
+![Listing the tools, narrowing them to the essential preset, and the startup abort a mistyped tool name produces](/demo.gif)
+
 ## Install
 
 ```sh

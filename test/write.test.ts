@@ -707,6 +707,19 @@ describe('update_gist', () => {
 });
 
 /**
+ * Built through JSON rather than an object literal: `{ '__proto__': x }` sets
+ * the prototype instead of adding a key, which is the same trap one layer up.
+ * The real path is a JSON body too, and `JSON.parse` makes it an own property.
+ */
+function gistWith(name: string): Record<string, unknown> {
+  const files = JSON.parse(
+    `{"a.txt":{"filename":"a.txt","content":"A"},` +
+      `${JSON.stringify(name)}:{"filename":${JSON.stringify(name)},"content":"C"}}`
+  ) as Record<string, unknown>;
+  return gistFixture({ visibility: 'private', files });
+}
+
+/**
  * Filenames come out of the gist, and `constructor`, `toString`, `valueOf`,
  * `hasOwnProperty` and `__proto__` are all legal ones. The payload builder used
  * to check `files[name] === undefined` against an object literal, so every one
@@ -722,19 +735,6 @@ describe('files named after Object.prototype members', () => {
     'hasOwnProperty',
     '__proto__',
   ];
-
-  /**
-   * Built through JSON rather than an object literal: `{ '__proto__': x }` sets
-   * the prototype instead of adding a key, which is the same trap one layer up.
-   * The real path is a JSON body too, and `JSON.parse` makes it an own property.
-   */
-  function gistWith(name: string): Record<string, unknown> {
-    const files = JSON.parse(
-      `{"a.txt":{"filename":"a.txt","content":"A"},` +
-        `${JSON.stringify(name)}:{"filename":${JSON.stringify(name)},"content":"C"}}`
-    ) as Record<string, unknown>;
-    return gistFixture({ visibility: 'private', files });
-  }
 
   it.each(PROTOTYPE_NAMES)(
     'refuses a rename that would destroy the existing "%s"',
@@ -1085,6 +1085,16 @@ describe('fork_gist', () => {
   });
 });
 
+/** A gist with two files, so deleting one is not deleting all of them. */
+function twoFileGist(): ReturnType<typeof gistFixture> {
+  return gistFixture({
+    files: {
+      'a.txt': { filename: 'a.txt', content: 'A' },
+      'b.txt': { filename: 'b.txt', content: 'B' },
+    },
+  });
+}
+
 /**
  * The point of the approval path: a client that can put a question in front of a
  * person gets asked, instead of a token that only proves the same call was made
@@ -1116,16 +1126,6 @@ describe('approval through the client', () => {
     ['delete_gist_files', { gistId: 'abc123', filenames: ['a.txt'] }, 'PATCH'],
     ['delete_gist', { gistId: 'abc123' }, 'DELETE'],
   ];
-
-  /** A gist with two files, so deleting one is not deleting all of them. */
-  function twoFileGist(): ReturnType<typeof gistFixture> {
-    return gistFixture({
-      files: {
-        'a.txt': { filename: 'a.txt', content: 'A' },
-        'b.txt': { filename: 'b.txt', content: 'B' },
-      },
-    });
-  }
 
   it.each(GUARDED)(
     '%s asks the user, and goes ahead once they accept',

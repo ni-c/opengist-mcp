@@ -139,7 +139,7 @@ export function registerGistWriteTools(
     (
       {
         files,
-        visibility,
+        visibility: newVisibility,
         title,
         description,
         expire,
@@ -184,8 +184,8 @@ export function registerGistWriteTools(
         // required `visibility` field prevents an accidental public default,
         // not a directed one: text inside a gist read earlier in the session
         // can ask for precisely this call. So it gets the same gate.
-        if (visibility !== 'private') {
-          const resource = `gist:create:${visibility}:${fingerprint({
+        if (newVisibility !== 'private') {
+          const resource = `gist:create:${newVisibility}:${fingerprint({
             files: files.map((file) => [file.filename, file.content]),
             title: title ?? null,
             description: description ?? null,
@@ -207,9 +207,9 @@ export function registerGistWriteTools(
               // The counts go in the sentence rather than into `details`: that
               // block is labelled as caller-supplied, and these are the one
               // thing here the server counted itself.
-              what: `create a ${visibility} gist of ${files.length} file(s), ${bytes} byte(s) in total`,
+              what: `create a ${newVisibility} gist of ${files.length} file(s), ${bytes} byte(s) in total`,
               consequence:
-                visibility === 'public'
+                newVisibility === 'public'
                   ? 'It is listed on the instance and readable by anyone. Content that has been read cannot be withdrawn.'
                   : 'Anyone with the URL can read it, and the URL may be shared onward. Content that has been read cannot be withdrawn.',
               fallbackNote:
@@ -239,7 +239,7 @@ export function registerGistWriteTools(
           files: Object.fromEntries(
             files.map((file) => [file.filename, { content: file.content }])
           ),
-          visibility,
+          visibility: newVisibility,
           ...(title !== undefined && { title }),
           ...(description !== undefined && { description }),
           ...(expire !== undefined && { expire }),
@@ -248,12 +248,12 @@ export function registerGistWriteTools(
 
         const response = await api.post('/gists', body);
         const gist = response.data as RawGist;
-        const notes = new Notes();
-        const shaped = shapeGistDetail(gist, SUMMARY_OPTIONS, notes);
+        const toolNotes = new Notes();
+        const shaped = shapeGistDetail(gist, SUMMARY_OPTIONS, toolNotes);
         return untrustedResult({
           created: true,
           ...shaped,
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );
@@ -486,8 +486,8 @@ export function registerGistWriteTools(
         const previousSha = gist.commits?.[0]?.version;
         const response = await api.patch(gistPath(id), body);
         const updated = response.data as RawGist;
-        const notes = new Notes();
-        const shaped = shapeGistDetail(updated, SUMMARY_OPTIONS, notes);
+        const toolNotes = new Notes();
+        const shaped = shapeGistDetail(updated, SUMMARY_OPTIONS, toolNotes);
 
         const touched = new Set(
           payload === undefined
@@ -498,9 +498,9 @@ export function registerGistWriteTools(
                 ...payload.renamed.map((rename) => rename.from),
               ]
         );
-        notes.add('Files that were not listed were left unchanged.');
+        toolNotes.add('Files that were not listed were left unchanged.');
         if (previousSha !== undefined) {
-          notes.add(
+          toolNotes.add(
             `The state before this change stays retrievable: get_gist with sha="${previousSha}".`
           );
         }
@@ -520,7 +520,7 @@ export function registerGistWriteTools(
             untouched: existing.filter((name) => !touched.has(name)),
           },
           previousRevision: previousSha,
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );
@@ -562,7 +562,7 @@ export function registerGistWriteTools(
     },
     ({ gistId: id, filenames, confirm_token }, mcp) =>
       run(async () => {
-        const sorted = [...new Set(filenames)].sort();
+        const sorted = [...new Set(filenames)].toSorted();
         // Binding the token to the file set stops a confirmation for one file
         // from being replayed to delete additional ones.
         const fileSetFingerprint = createHash('sha256')
@@ -624,12 +624,12 @@ export function registerGistWriteTools(
         const files = Object.fromEntries(sorted.map((name) => [name, null]));
         const response = await api.patch(gistPath(id), { files });
         const updated = response.data as RawGist;
-        const notes = new Notes();
-        const shaped = shapeGistDetail(updated, SUMMARY_OPTIONS, notes);
+        const toolNotes = new Notes();
+        const shaped = shapeGistDetail(updated, SUMMARY_OPTIONS, toolNotes);
         return untrustedResult({
           deletedFiles: sorted,
           ...shaped,
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );
@@ -744,17 +744,17 @@ export function registerGistWriteTools(
       run(async () => {
         const response = await api.post(gistPath(id, '/forks'));
         const gist = response.data as RawGist;
-        const notes = new Notes();
-        const shaped = shapeGistDetail(gist, SUMMARY_OPTIONS, notes);
+        const toolNotes = new Notes();
+        const shaped = shapeGistDetail(gist, SUMMARY_OPTIONS, toolNotes);
         if (response.status === 200) {
-          notes.add(
+          toolNotes.add(
             'You had already forked this gist; the existing fork is returned instead of a new one.'
           );
         }
         return untrustedResult({
           created: response.status === 201,
           ...shaped,
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );

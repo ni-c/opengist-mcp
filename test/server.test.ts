@@ -75,15 +75,15 @@ describe('tool registration', () => {
   it('exposes all read and write tools', async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(
-      [...READ_TOOLS, ...WRITE_TOOLS].sort()
+    expect(tools.map((t) => t.name).toSorted()).toEqual(
+      [...READ_TOOLS, ...WRITE_TOOLS].toSorted()
     );
   });
 
   it('registers no write tools in read-only mode', async () => {
     const client = await connect({ readOnly: true });
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([...READ_TOOLS].sort());
+    expect(tools.map((t) => t.name).toSorted()).toEqual(READ_TOOLS.toSorted());
   });
 
   it('annotates read, destructive and idempotent tools', async () => {
@@ -138,7 +138,7 @@ describe('tool registration', () => {
         return properties?.untrusted === undefined;
       })
       .map((tool) => tool.name)
-      .sort();
+      .toSorted();
     // The three whose answer is entirely this server's own words: an id it was
     // given, a boolean it computed. A marker on those would be noise.
     expect(plain).toEqual(['check_gist_like', 'delete_gist', 'set_gist_like']);
@@ -439,11 +439,13 @@ describe('get_gist', () => {
     })) as CallToolResult;
     expect(resultJson(without).cloneUrl).toBeUndefined();
 
-    const with_ = (await client.callTool({
+    const withClone = (await client.callTool({
       name: 'get_gist',
       arguments: { gistId: 'abc123', includeCloneUrls: true },
     })) as CallToolResult;
-    expect(resultJson(with_).cloneUrl).toBe('http://gist.test/you/abc123.git');
+    expect(resultJson(withClone).cloneUrl).toBe(
+      'http://gist.test/you/abc123.git'
+    );
   });
 });
 
@@ -791,8 +793,8 @@ describe('starting without credentials', () => {
   it('lists every tool without credentials', async () => {
     const client = await connect(unconfigured);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(
-      [...READ_TOOLS, ...WRITE_TOOLS].sort()
+    expect(tools.map((t) => t.name).toSorted()).toEqual(
+      [...READ_TOOLS, ...WRITE_TOOLS].toSorted()
     );
   });
 
@@ -881,6 +883,6 @@ describe('caller fields cannot reach the API', () => {
       unknown
     >;
     expect(body.admin).toBeUndefined();
-    expect(body.__proto__polluted).toBeUndefined();
+    expect(body['__proto__polluted']).toBeUndefined();
   });
 });

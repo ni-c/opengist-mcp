@@ -95,8 +95,12 @@ export function gistPath(id: string, suffix = ''): string {
 }
 
 /** Builds the raw file path, e.g. `/gists/abc/files/9f2c1ab/main.go`. */
-export function rawFilePath(id: string, sha: string, name: string): string {
-  return `/gists/${encodeURIComponent(id)}/files/${encodeURIComponent(sha)}/${encodeURIComponent(name)}`;
+export function rawFilePath(
+  id: string,
+  revision: string,
+  name: string
+): string {
+  return `/gists/${encodeURIComponent(id)}/files/${encodeURIComponent(revision)}/${encodeURIComponent(name)}`;
 }
 
 /** Appends a query string built from the defined entries only. */

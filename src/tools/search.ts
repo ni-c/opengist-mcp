@@ -120,7 +120,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
       username: user,
       visibility: wantedVisibility,
       archived,
-      since,
+      since: updatedSince,
       limit,
       maxPages,
     }) =>
@@ -130,7 +130,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
           .split(/\s+/)
           .filter((term) => term !== '');
         const matches: Record<string, unknown>[] = [];
-        const notes: string[] = [];
+        const scanNotes: string[] = [];
         const startedAt = Date.now();
 
         let scannedPages = 0;
@@ -154,7 +154,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
             withQuery(listPath(scope, user), {
               page: nextPage,
               per_page: SCAN_PER_PAGE,
-              since,
+              since: updatedSince,
             })
           );
           const gists = (response.data ?? []) as RawGist[];
@@ -199,27 +199,27 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
 
         const truncated = stopped !== null;
         if (stopped === 'pageCap') {
-          notes.push(
+          scanNotes.push(
             `INCOMPLETE RESULT: stopped after the page cap of ${maxPages} page(s), having scanned ${scannedGists}` +
               `${total !== null ? ` of ${total}` : ''} gist(s). Narrow the search with username/since/visibility or raise maxPages (max ${MAX_PAGES}).`
           );
         } else if (stopped === 'timeBudget') {
-          notes.push(
+          scanNotes.push(
             `INCOMPLETE RESULT: the scan hit its time budget of ${SCAN_BUDGET_MS / 1000}s after ${scannedGists} gist(s). Narrow the search.`
           );
         } else if (stopped === 'limit') {
-          notes.push(
+          scanNotes.push(
             `INCOMPLETE RESULT: stopped at the limit of ${limit} match(es) after scanning ${scannedGists} gist(s); more may exist. Raise limit or narrow the query.`
           );
         } else {
-          notes.push(
+          scanNotes.push(
             `Complete scan: all ${scannedGists} gist(s) in this scope were checked.`
           );
         }
-        notes.push(
+        scanNotes.push(
           'Opengist has no search API — this was a client-side scan of the list endpoints, and file contents were not searched.'
         );
-        if (matchedUntrustedMetadata) notes.push(UNTRUSTED_METADATA_NOTE);
+        if (matchedUntrustedMetadata) scanNotes.push(UNTRUSTED_METADATA_NOTE);
 
         return untrustedResult({
           query,
@@ -233,7 +233,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
             totalAvailable: total,
           },
           truncated,
-          notes,
+          notes: scanNotes,
         });
       })
   );

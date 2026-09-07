@@ -87,7 +87,7 @@ describe('a gist through its whole life', () => {
     expect(gistId).not.toBe('');
 
     const fetched = parse<Gist>(await asking.call('get_gist', { gistId }));
-    expect(fetched.files?.map((f) => f.filename).sort()).toEqual([
+    expect(fetched.files?.map((f) => f.filename).toSorted()).toEqual([
       'first.txt',
       'second.txt',
     ]);
@@ -133,7 +133,7 @@ describe('a gist through its whole life', () => {
       ],
     });
     const after = parse<Gist>(await asking.call('get_gist', { gistId }));
-    expect(after.files?.map((f) => f.filename).sort()).toEqual([
+    expect(after.files?.map((f) => f.filename).toSorted()).toEqual([
       'first.txt',
       'renamed.txt',
     ]);

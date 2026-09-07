@@ -55,36 +55,41 @@ confirmation prompts never quote it.
 An approval binds to one operation on one target with one set of arguments: the key
 it is issued for carries a hash of the whole effect, so a yes given for "make this
 gist public" cannot be spent on another gist, or with file operations attached that
-nobody was shown. What it does **not** carry is freshness. `mcp-approval` states this
-in its own security policy, and the reason it is not solved in the library is that a
-list of spent approvals kept in one process starts empty after a restart and is
-absent in a second instance — it would fail open in exactly the deployment that
-needed it. At-most-once therefore belongs to the server that acts.
+nobody was shown.
 
-For this server the picture is:
+Both protocol revisions are served from one code path (`serveStdio` in
+`src/index.ts` negotiates `2025-11-25` and `2026-07-28` per connection), and the
+picture is the same on either:
 
 - The **two-call token** is single-use. It is consumed out of its store, and a second
   call carrying the same token is refused with the reason instead of acted on. The
   tests pin that for `create_gist`: a replayed token produces no second POST.
-- The **dialog** answer never leaves the process. On a 2025-era connection
-  elicitation is a server-to-client request raised inside the `tools/call` that is
-  waiting on it, so there is no state handed to the client and nothing for a client
-  to send twice. This server offers only 2025-era revisions, so that is the case
-  today.
-- On a **2026-07-28** connection it would be different: the answer travels back
-  through the client as a sealed request state, and the seal proves who minted it and
-  what for — not whether it has already been spent. A client that re-sent an accepted
-  `create_gist` inside that state's lifetime would get a second gist. Of the guarded
-  tools only `create_gist` is affected: a repeated `update_gist` PATCH lands on the
-  state it already produced, and a repeated delete finds a 404. `fork_gist` carries no
-  guard and needs none — Opengist returns the fork that already exists rather than
-  making a second one, which the integration suite checks against a real instance.
+- The **dialog** answer is single-use as well. On a `2025-11-25` connection it never
+  leaves the process. On a `2026-07-28` connection it travels back through the client
+  as a sealed request state, and since `mcp-approval` 0.8.1 that state carries a nonce
+  that is spent on the first answer, accepted or declined — a client that re-sent an
+  accepted `create_gist` inside the state's lifetime is asked again rather than
+  obeyed.
 
-If this server is ever configured to serve 2026-07-28, at-most-once for `create_gist`
-has to be enforced here. The natural place is the key the approval is bound to,
-retired once it has been acted on, so that a replayed state stops matching and the
-caller is asked again rather than refused — a genuine second identical gist is a
-legitimate thing to want, it just needs its own yes.
+The residual is honest and small: the record of spent states lives in one process.
+A restart forgets it, and a second instance does not share it, so a state sealed by
+one process before a restart is fresh to the process that comes after. The state's
+own lifetime (fifteen minutes) bounds that window.
+
+## What the instance sends
+
+Everything Opengist answers is read at one boundary (`src/boundary.ts`) rather than
+trusted by type: a field of the wrong type is absent, a count is finite, a commit id
+has the shape of one before it is spliced into a request path or quoted into a note,
+a display string is cut at 2000 characters, and a related gist is read one level
+deep. Every string that leaves is stripped of control characters and repaired of lone
+surrogates (`src/text.ts`); where that touches a file body the result says how many
+characters it removed, per file. Text the instance wrote into an error body is cut,
+cleaned and labelled as its words before it reaches a result.
+
+The access token is checked for the shape a header value must have before the HTTP
+layer sees it, at startup and again in front of every request — the refusal the HTTP
+layer would produce quotes the header value in full, and the value is the token.
 
 `OPENGIST_READ_ONLY=true` registers only the read tools, which is a real reduction of
 the attack surface rather than a runtime check — but the boundary that actually holds

@@ -4,6 +4,7 @@ import type {
 } from '@modelcontextprotocol/server';
 
 import { OpengistApiError } from './api.js';
+import { cleanText, upstreamText } from './text.js';
 
 export function textResult(text: string): CallToolResult {
   return { content: [{ type: 'text', text }] };
@@ -50,9 +51,16 @@ export function untrustedResult(data: Record<string, unknown>): CallToolResult {
  * it was given, a boolean it computed. The marker has to mean something, and
  * putting it on those would make it noise.
  */
-export function jsonResult(data: Record<string, unknown>): CallToolResult {
-  if (JSON.stringify(data).length <= MAX_RESULT_BYTES) {
-    return structured(data);
+export function jsonResult(raw: Record<string, unknown>): CallToolResult {
+  // One walk over every string that leaves, whichever tool built it: control
+  // characters out, lone surrogates repaired. See text.ts for why.
+  const data = cleanValue(raw) as Record<string, unknown>;
+  // Measured on the string that is emitted — the indented text block, which
+  // is two to three times the compact form the budget used to measure — so
+  // the ceiling is the ceiling of what a client actually receives.
+  const text = render(data);
+  if (text.length <= MAX_RESULT_BYTES) {
+    return structured(data, text);
   }
 
   const stripped = JSON.parse(
@@ -62,14 +70,16 @@ export function jsonResult(data: Record<string, unknown>): CallToolResult {
         : value
     )
   ) as Record<string, unknown>;
-  if (JSON.stringify(stripped).length <= MAX_RESULT_BYTES) {
-    return structured({
-      ...stripped,
-      notes: [
-        ...(Array.isArray(stripped.notes) ? stripped.notes : []),
-        `The result exceeded ${MAX_RESULT_BYTES} characters, so file contents were dropped. Fetch them individually with get_gist_file.`,
-      ],
-    });
+  const withNote = {
+    ...stripped,
+    notes: [
+      ...(Array.isArray(stripped.notes) ? stripped.notes : []),
+      `The result exceeded ${MAX_RESULT_BYTES} characters, so file contents were dropped. Fetch them individually with get_gist_file.`,
+    ],
+  };
+  const strippedText = render(withNote);
+  if (strippedText.length <= MAX_RESULT_BYTES) {
+    return structured(withNote, strippedText);
   }
 
   // Stripping only reaches `content` strings, so it does nothing at all for a
@@ -105,36 +115,42 @@ export class ResultTooLargeError extends Error {}
  * notes this server adds are prose in a list, which a client can read but not
  * check, while `untrusted: true` is a field.
  */
-function structured(data: Record<string, unknown>): CallToolResult {
+function structured(
+  data: Record<string, unknown>,
+  text: string
+): CallToolResult {
   return {
-    content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+    content: [{ type: 'text', text }],
     structuredContent: data,
   };
 }
 
-export function errorResult(text: string): CallToolResult {
-  return { content: [{ type: 'text', text }], isError: true };
+/** The text block, exactly as it is emitted. */
+function render(data: Record<string, unknown>): string {
+  return JSON.stringify(data, null, 2);
 }
 
-const MAX_ERROR_BODY_LENGTH = 2000;
-
 /**
- * Limits what an upstream error body can inject into the model context:
- * HTML error pages (reverse proxies, WAFs) are dropped entirely and other
- * bodies are truncated.
+ * Rebuilds a result with every string cleaned. `Object.fromEntries` rather
+ * than `out[key] = …`: a key named `__proto__` — legal JSON from any instance
+ * — would otherwise set the prototype and drop the field.
  */
-function sanitizeErrorBody(body: string): string {
-  const trimmed = body.trim();
-  // Anything markup-shaped: a reverse proxy's error page or a WAF block page.
-  // The check is deliberately loose — an XML declaration, a leading comment or
-  // a doctype followed by a newline are all the same thing here.
-  if (/^(<!doctype|<html[\s>]|<\?xml|<!--)/i.test(trimmed)) {
-    return '(HTML error page omitted)';
+function cleanValue(value: unknown): unknown {
+  if (typeof value === 'string') return cleanText(value);
+  if (Array.isArray(value)) return value.map(cleanValue);
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        cleanText(key),
+        cleanValue(entry),
+      ])
+    );
   }
-  if (trimmed.length > MAX_ERROR_BODY_LENGTH) {
-    return `${trimmed.slice(0, MAX_ERROR_BODY_LENGTH)}… (truncated)`;
-  }
-  return trimmed;
+  return value;
+}
+
+export function errorResult(text: string): CallToolResult {
+  return { content: [{ type: 'text', text }], isError: true };
 }
 
 function hintFor(status: number): string {
@@ -193,8 +209,11 @@ export async function run(
       return errorResult(error.message);
     }
     if (error instanceof OpengistApiError) {
+      // The body is the instance's text: stripped of control characters,
+      // cut, and labelled as such, so the model reads it as a quotation.
+      const body = upstreamText(error.body);
       return errorResult(
-        `${error.message}\n${sanitizeErrorBody(error.body)}${hintFor(error.status)}`
+        `${error.message}${body === '' ? '' : `\n${body}`}${hintFor(error.status)}`
       );
     }
     const message = error instanceof Error ? error.message : String(error);

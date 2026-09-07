@@ -41,14 +41,18 @@ RUN apk add --no-cache tini=~0.19
 # undici, brace-expansion and ip-address, none of them this project's
 # dependencies, and none of them reachable at runtime. They also cannot be fixed
 # from here: they ship inside the base image.
+# yarn is the third thing the base image ships beside npm and corepack, under
+# /opt and as two symlinks; nothing here runs it either.
 RUN rm -rf /usr/local/lib/node_modules/npm \
   /usr/local/lib/node_modules/corepack \
-  /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+  /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+  /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-v*
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-# The server reports its version from package.json at runtime.
-COPY package.json package-lock.json ./
+# The server reports its version from package.json at runtime. The lockfile is
+# not copied: nothing reads it once node_modules is in place.
+COPY package.json ./
 
 # Ownership proof for the MCP Registry: must match server.json's name.
 LABEL io.modelcontextprotocol.server.name="io.github.ni-c/opengist-mcp"

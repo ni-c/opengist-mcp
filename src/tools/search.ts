@@ -16,6 +16,7 @@ import {
 } from '../shape.js';
 
 import type { OpengistApi } from '../api.js';
+import { readGists } from '../boundary.js';
 import { READ_ONLY } from './annotations.js';
 import { parsePagination } from '../pagination.js';
 import { run, untrustedResult } from '../result.js';
@@ -63,6 +64,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
         in: z
           .array(z.enum(['title', 'description', 'topics', 'owner']))
           .min(1)
+          .max(4)
           .default(['title', 'description', 'topics'])
           .describe('Which fields to match against'),
         scope: gistScope.default('mine'),
@@ -120,7 +122,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
       username: user,
       visibility: wantedVisibility,
       archived,
-      since,
+      since: updatedSince,
       limit,
       maxPages,
     }) =>
@@ -130,7 +132,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
           .split(/\s+/)
           .filter((term) => term !== '');
         const matches: Record<string, unknown>[] = [];
-        const notes: string[] = [];
+        const scanNotes: string[] = [];
         const startedAt = Date.now();
 
         let scannedPages = 0;
@@ -138,6 +140,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
         let total: number | null = null;
         let stopped: string | null = null;
         let matchedUntrustedMetadata = false;
+        let skippedEntries = 0;
         let nextPage: number | null = 1;
 
         while (nextPage !== null) {
@@ -154,10 +157,11 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
             withQuery(listPath(scope, user), {
               page: nextPage,
               per_page: SCAN_PER_PAGE,
-              since,
+              since: updatedSince,
             })
           );
-          const gists = (response.data ?? []) as RawGist[];
+          const { gists, skipped } = readGists(response.data);
+          skippedEntries += skipped;
           const pagination = parsePagination(
             response.headers,
             nextPage,
@@ -199,27 +203,32 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
 
         const truncated = stopped !== null;
         if (stopped === 'pageCap') {
-          notes.push(
+          scanNotes.push(
             `INCOMPLETE RESULT: stopped after the page cap of ${maxPages} page(s), having scanned ${scannedGists}` +
               `${total !== null ? ` of ${total}` : ''} gist(s). Narrow the search with username/since/visibility or raise maxPages (max ${MAX_PAGES}).`
           );
         } else if (stopped === 'timeBudget') {
-          notes.push(
+          scanNotes.push(
             `INCOMPLETE RESULT: the scan hit its time budget of ${SCAN_BUDGET_MS / 1000}s after ${scannedGists} gist(s). Narrow the search.`
           );
         } else if (stopped === 'limit') {
-          notes.push(
+          scanNotes.push(
             `INCOMPLETE RESULT: stopped at the limit of ${limit} match(es) after scanning ${scannedGists} gist(s); more may exist. Raise limit or narrow the query.`
           );
         } else {
-          notes.push(
+          scanNotes.push(
             `Complete scan: all ${scannedGists} gist(s) in this scope were checked.`
           );
         }
-        notes.push(
+        scanNotes.push(
           'Opengist has no search API — this was a client-side scan of the list endpoints, and file contents were not searched.'
         );
-        if (matchedUntrustedMetadata) notes.push(UNTRUSTED_METADATA_NOTE);
+        if (skippedEntries > 0) {
+          scanNotes.push(
+            `${skippedEntries} entry(ies) in the scanned pages were not objects and were skipped.`
+          );
+        }
+        if (matchedUntrustedMetadata) scanNotes.push(UNTRUSTED_METADATA_NOTE);
 
         return untrustedResult({
           query,
@@ -233,7 +242,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
             totalAvailable: total,
           },
           truncated,
-          notes,
+          notes: scanNotes,
         });
       })
   );

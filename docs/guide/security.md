@@ -105,13 +105,36 @@ Anything unbounded is a way to fill a context window with something useless:
 
 Every omission names the call that fetches the rest, so nothing disappears silently.
 
+## What the instance sends
+
+Nothing Opengist answers is taken at its word. Every response is read at one
+boundary, field by field: a field of the wrong type is absent rather than fatal, a
+count is finite, a commit id has the shape of one before it is used in a request
+path or a note, a display string is cut at 2000 characters, and related gists are
+read one level deep. One entry that cannot be read costs the listing that one entry,
+never the other ninety-nine.
+
+Every string that leaves is stripped of control characters (C0 except tab, line feed
+and carriage return; C1; DEL) and repaired of lone surrogates, which a `slice` at a
+character budget can produce and which some clients cannot encode. Where that
+touches a file body, the result says how many characters were removed from which
+file — the gist itself still contains them, so a write that copies the content back
+would drop them, and the note is there so that is a decision rather than an accident.
+
 ## Transport
 
 Requests refuse redirects, so the bearer token cannot be replayed against another
 host. Every request carries a 30-second timeout. Path parameters are validated
-against `.`, `..`, slashes and control characters, and then URL-encoded. Upstream
-error bodies are truncated at 2000 characters and HTML error pages are dropped
-entirely rather than pushed into the context.
+against `.`, `..`, slashes and control characters, and then URL-encoded. The status
+of an answer is read before its body: an error body is read under a 64 KiB ceiling of
+its own, cut, cleaned, and labelled as the instance's text, and HTML error pages are
+dropped entirely rather than pushed into the context.
+
+The token is checked for the shape a header value must have — printable ASCII, at
+most 1024 characters — at startup and again in front of every request. The HTTP
+layer's own refusal quotes the offending header value in full, and for the
+`Authorization` header that value is the token; the check here names the header and
+nothing else.
 
 ## What actually holds
 

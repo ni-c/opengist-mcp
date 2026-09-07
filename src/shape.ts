@@ -1,4 +1,8 @@
 import { ToolInputError } from './result.js';
+import { type RawCommit, type RawGist, type RawUser } from './boundary.js';
+import { cleanCounted, cleanShort } from './text.js';
+
+export type { RawCommit, RawGist, RawUser } from './boundary.js';
 
 /** Reminder attached to every response that carries gist content. */
 export const UNTRUSTED_CONTENT_NOTE =
@@ -55,58 +59,6 @@ export class Notes {
   }
 }
 
-export interface RawUser {
-  id?: number;
-  username?: string;
-  login?: string;
-  type?: string;
-  avatar_url?: string;
-  /** Only present on the authenticated caller's own record (`/user`). */
-  email?: string;
-  created_at?: string;
-}
-
-interface RawFile {
-  filename?: string;
-  language?: string;
-  size?: number;
-  truncated?: boolean;
-  content?: string;
-  encoding?: string;
-  type?: string;
-}
-
-export interface RawGist {
-  id?: string;
-  slug_url?: string;
-  owner?: RawUser;
-  title?: string;
-  html_url?: string;
-  description?: string;
-  visibility?: string;
-  like_count?: number;
-  fork_count?: number;
-  clone_url?: string;
-  ssh_url?: string;
-  topics?: string[];
-  archived?: boolean;
-  created_at?: string;
-  updated_at?: string;
-  expires_at?: string | null;
-  fork_of?: RawGist | null;
-  forks?: RawGist[];
-  files?: Record<string, RawFile>;
-  commits?: RawCommit[];
-  truncated?: boolean;
-}
-
-interface RawCommit {
-  version?: string;
-  author?: { name?: string; email?: string };
-  change_status?: Record<string, number>;
-  committed_at?: string;
-}
-
 /**
  * Detects content that must not be pushed into the model context as text.
  * A NUL byte is decisive; otherwise a high share of control characters in the
@@ -151,31 +103,14 @@ export function shapeUserDetail(user: RawUser | undefined): unknown {
   };
 }
 
-/** The four keys Opengist documents for `change_status`. */
-const CHANGE_STATUS_KEYS = [
-  'files_changed',
-  'additions',
-  'deletions',
-  'total',
-] as const;
-
 export function shapeCommit(commit: RawCommit): unknown {
-  // Allowlisted rather than passed through: the type says
-  // Record<string, number>, but nothing validates that at runtime, so a future
-  // (or hostile) instance could put arbitrary keys and values in there.
-  const raw = commit.change_status;
-  const changes: Record<string, number> = {};
-  if (raw && typeof raw === 'object') {
-    for (const key of CHANGE_STATUS_KEYS) {
-      if (typeof raw[key] === 'number') changes[key] = raw[key];
-    }
-  }
-
+  // `change_status` arrives allowlisted to the four documented keys, each a
+  // finite number, from `readCommit` at the boundary.
   return {
     sha: commit.version,
     committedAt: commit.committed_at,
     author: commit.author?.name,
-    changes: Object.keys(changes).length > 0 ? changes : undefined,
+    changes: commit.change_status,
   };
 }
 
@@ -321,8 +256,9 @@ export function shapeGistDetail(
       return shapedFile;
     }
     const limit = Math.min(options.maxFileBytes, budgetLeft);
+    let shown = content;
     if (content.length > limit) {
-      shapedFile.content = content.slice(0, limit);
+      shown = content.slice(0, limit);
       shapedFile.contentTruncated = true;
       shapedFile.returnedBytes = limit;
       notes.add(
@@ -330,9 +266,14 @@ export function shapeGistDetail(
       );
       budgetLeft = 0;
     } else {
-      shapedFile.content = content;
       budgetLeft -= content.length;
     }
+    // Cleaned here rather than only in the result walk, because here the
+    // removal can be *announced* per file: a body that silently differs from
+    // what the gist stores is a body the model cannot reason about.
+    const { text, removed } = cleanCounted(shown);
+    shapedFile.content = text;
+    if (removed > 0) notes.add(controlCharactersNote(ref, removed));
     if (file.truncated) {
       notes.add(`Opengist itself truncated the content of ${ref}.`);
     }
@@ -386,6 +327,11 @@ export function shapeGistDetail(
   return shaped;
 }
 
+/** The note for a file body that lost control characters on the way out. */
+export function controlCharactersNote(ref: string, removed: number): string {
+  return `${removed} control character(s) were removed from the content of ${ref}; the gist itself still contains them, so a write that copies this content back would drop them.`;
+}
+
 export type FileOp =
   | { op: 'write'; filename: string; content: string }
   | { op: 'rename'; filename: string; newFilename: string; content?: string };
@@ -399,9 +345,26 @@ export interface FilesPayload {
 
 function nearMatch(name: string, existing: string[]): string | undefined {
   const needle = name.trim().toLowerCase();
-  return existing.find(
+  const found = existing.find(
     (candidate) => candidate.trim().toLowerCase() === needle
   );
+  // A filename the instance sent, on its way into a sentence: cleaned and
+  // cut, so a name that carries an escape sequence or a kilobyte of text
+  // cannot forge the rest of the message.
+  return found === undefined ? undefined : cleanShort(found);
+}
+
+const MAX_LISTED_FILES = 20;
+
+/** The existing filenames for an error message, bounded and cleaned. */
+function listNames(existing: string[]): string {
+  if (existing.length === 0) return '(none)';
+  const shown = existing
+    .slice(0, MAX_LISTED_FILES)
+    .map((name) => `"${cleanShort(name)}"`)
+    .join(', ');
+  const rest = existing.length - MAX_LISTED_FILES;
+  return rest > 0 ? `${shown} and ${rest} more` : shown;
 }
 
 /**
@@ -449,7 +412,7 @@ export function buildFilesPayload(
           throw new ToolInputError(
             near !== undefined
               ? `This gist has no file "${op.filename}", but it does have "${near}". Fix the filename, use op="rename" to rename "${near}", or pass allowCreate=true to add a second file.`
-              : `This gist has no file "${op.filename}". Existing files: ${existing.length > 0 ? existing.map((f) => `"${f}"`).join(', ') : '(none)'}. Pass allowCreate=true to add it as a new file.`
+              : `This gist has no file "${op.filename}". Existing files: ${listNames(existing)}. Pass allowCreate=true to add it as a new file.`
           );
         }
         payload.created.push(op.filename);

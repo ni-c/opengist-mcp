@@ -32,10 +32,18 @@ import {
   UNTRUSTED_CONTENT_NOTE,
   UNTRUSTED_METADATA_NOTE,
   looksBinary,
-  type RawGist,
 } from '../shape.js';
 
 import type { OpengistApi } from '../api.js';
+import {
+  readCommits,
+  readGist,
+  readGists,
+  skippedNote,
+  stringOf,
+} from '../boundary.js';
+import { cleanCounted } from '../text.js';
+import { controlCharactersNote } from '../shape.js';
 import { READ_ONLY } from './annotations.js';
 import { parsePagination, paginationNotes } from '../pagination.js';
 import { run, ToolInputError, untrustedResult } from '../result.js';
@@ -76,13 +84,19 @@ export function listPath(scope: string, user: string | undefined): string {
 
 /** Resolves the latest commit SHA, since the API rejects "HEAD" in paths. */
 async function resolveLatestSha(api: OpengistApi, id: string): Promise<string> {
-  const commits = (await api.get(
+  const answer = await api.get(
     withQuery(gistPath(id, '/commits'), { page: 1, per_page: 1 })
-  )) as { version?: string }[] | null;
-  const latest = commits?.[0]?.version;
-  if (!latest) {
+  );
+  const { commits } = readCommits(answer);
+  const latest = commits[0]?.version;
+  if (latest === undefined) {
+    // `readCommit` keeps only a hex `version`: the id goes into a request
+    // path and into a note, and anything else the instance sends there is
+    // neither.
     throw new ToolInputError(
-      `Gist "${id}" has no commits, so there is no revision to read a file from.`
+      Array.isArray(answer) && answer.length > 0
+        ? `The instance answered with no usable revision id for gist "${id}", so there is no revision to read a file from.`
+        : `Gist "${id}" has no commits, so there is no revision to read a file from.`
     );
   }
   return latest;
@@ -121,28 +135,36 @@ export function registerGistReadTools(
         notes,
       }),
     },
-    ({ scope, username: user, since, page, perPage }) =>
+    ({
+      scope,
+      username: user,
+      since: updatedSince,
+      page: requestedPage,
+      perPage: requestedPerPage,
+    }) =>
       run(async () => {
-        const currentPage = page ?? 1;
-        const size = perPage ?? DEFAULT_PER_PAGE;
+        const currentPage = requestedPage ?? 1;
+        const size = requestedPerPage ?? DEFAULT_PER_PAGE;
         const path = withQuery(listPath(scope, user), {
           page: currentPage,
           per_page: size,
-          since,
+          since: updatedSince,
         });
         const response = await api.getWithHeaders(path);
-        const gists = (response.data ?? []) as RawGist[];
-        const pagination = parsePagination(response.headers, currentPage, size);
-        const notes = new Notes();
-        notes.addAll(paginationNotes(pagination, gists.length, 'list_gists'));
+        const { gists, skipped } = readGists(response.data);
+        const pageInfo = parsePagination(response.headers, currentPage, size);
+        const toolNotes = new Notes();
+        toolNotes.addAll(paginationNotes(pageInfo, gists.length, 'list_gists'));
+        const skippedGists = skippedNote(skipped, 'entry');
+        if (skippedGists !== undefined) toolNotes.add(skippedGists);
         if (gists.some(hasUntrustedMetadata))
-          notes.add(UNTRUSTED_METADATA_NOTE);
+          toolNotes.add(UNTRUSTED_METADATA_NOTE);
         return untrustedResult({
           scope,
           username: user,
-          pagination,
+          pagination: pageInfo,
           gists: gists.map(shapeGistSummary),
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );
@@ -212,13 +234,13 @@ export function registerGistReadTools(
           revision === undefined
             ? gistPath(id)
             : gistPath(id, `/${encodeURIComponent(revision)}`);
-        const gist = (await api.get(path)) as RawGist;
-        const notes = new Notes();
-        const shaped = shapeGistDetail(gist, options, notes);
+        const gist = readGist(await api.get(path), path);
+        const toolNotes = new Notes();
+        const shaped = shapeGistDetail(gist, options, toolNotes);
         return untrustedResult({
           ...shaped,
           ...(revision !== undefined && { revision }),
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );
@@ -259,6 +281,10 @@ export function registerGistReadTools(
         sha: z.string(),
         contentType: z.string().optional(),
         size: z.number().int(),
+        // Present on the text path. It was missing from this closed schema,
+        // and the SDK client refuses a result with a property the schema does
+        // not name — every successful call, for every client that validates.
+        offset: z.number().int().optional(),
         returnedBytes: z.number().int().optional(),
         content: z.string().optional().describe('Absent for a binary file.'),
         contentOmitted: z
@@ -272,9 +298,10 @@ export function registerGistReadTools(
       run(async () => {
         const resolved = revision ?? (await resolveLatestSha(api, id));
         const raw = await api.getRaw(rawFilePath(id, resolved, name));
-        const notes = new Notes();
+        const contentType = stringOf(raw.contentType, 200);
+        const toolNotes = new Notes();
         if (revision === undefined) {
-          notes.add(
+          toolNotes.add(
             `Read at the latest revision ${resolved}. Pass sha="${resolved}" to pin follow-up calls to it.`
           );
         }
@@ -283,33 +310,38 @@ export function registerGistReadTools(
             gistId: id,
             filename: name,
             sha: resolved,
-            contentType: raw.contentType,
+            contentType,
             size: raw.text.length,
             contentOmitted: 'binary',
             notes: [
-              ...notes.list(),
+              ...toolNotes.list(),
               'The file looks binary, so its content was not returned as text.',
             ],
           });
         }
         const slice = raw.text.slice(offset, offset + maxBytes);
+        // The offsets count raw characters, so `end` is measured before the
+        // cleaning below, which can only shorten.
         const end = offset + slice.length;
         if (end < raw.text.length) {
-          notes.add(
+          toolNotes.add(
             `Returned characters ${offset}-${end} of ${raw.text.length}; call again with offset=${end} for more.`
           );
         }
-        notes.add(UNTRUSTED_CONTENT_NOTE);
+        const { text, removed } = cleanCounted(slice);
+        if (removed > 0)
+          toolNotes.add(controlCharactersNote('this file', removed));
+        toolNotes.add(UNTRUSTED_CONTENT_NOTE);
         return untrustedResult({
           gistId: id,
           filename: name,
           sha: resolved,
-          contentType: raw.contentType,
+          contentType,
           size: raw.text.length,
           offset,
           returnedBytes: slice.length,
-          content: slice,
-          notes: notes.list(),
+          content: text,
+          notes: toolNotes.list(),
         });
       })
   );
@@ -330,30 +362,30 @@ export function registerGistReadTools(
         notes,
       }),
     },
-    ({ gistId: id, page, perPage }) =>
+    ({ gistId: id, page: requestedPage, perPage: requestedPerPage }) =>
       run(async () => {
-        const currentPage = page ?? 1;
-        const size = perPage ?? DEFAULT_PER_PAGE;
+        const currentPage = requestedPage ?? 1;
+        const size = requestedPerPage ?? DEFAULT_PER_PAGE;
         const response = await api.getWithHeaders(
           withQuery(gistPath(id, '/commits'), {
             page: currentPage,
             per_page: size,
           })
         );
-        const commits = (response.data ?? []) as Parameters<
-          typeof shapeCommit
-        >[0][];
-        const pagination = parsePagination(response.headers, currentPage, size);
-        const notes = new Notes();
-        notes.addAll(
-          paginationNotes(pagination, commits.length, 'list_gist_commits')
+        const { commits, skipped } = readCommits(response.data);
+        const pageInfo = parsePagination(response.headers, currentPage, size);
+        const toolNotes = new Notes();
+        toolNotes.addAll(
+          paginationNotes(pageInfo, commits.length, 'list_gist_commits')
         );
-        if (hasUntrustedAuthor(commits)) notes.add(UNTRUSTED_AUTHOR_NOTE);
+        const skippedCommits = skippedNote(skipped, 'commit');
+        if (skippedCommits !== undefined) toolNotes.add(skippedCommits);
+        if (hasUntrustedAuthor(commits)) toolNotes.add(UNTRUSTED_AUTHOR_NOTE);
         return untrustedResult({
           gistId: id,
-          pagination,
+          pagination: pageInfo,
           commits: commits.map(shapeCommit),
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );
@@ -373,29 +405,31 @@ export function registerGistReadTools(
         notes,
       }),
     },
-    ({ gistId: id, page, perPage }) =>
+    ({ gistId: id, page: requestedPage, perPage: requestedPerPage }) =>
       run(async () => {
-        const currentPage = page ?? 1;
-        const size = perPage ?? DEFAULT_PER_PAGE;
+        const currentPage = requestedPage ?? 1;
+        const size = requestedPerPage ?? DEFAULT_PER_PAGE;
         const response = await api.getWithHeaders(
           withQuery(gistPath(id, '/forks'), {
             page: currentPage,
             per_page: size,
           })
         );
-        const forks = (response.data ?? []) as RawGist[];
-        const pagination = parsePagination(response.headers, currentPage, size);
-        const notes = new Notes();
-        notes.addAll(
-          paginationNotes(pagination, forks.length, 'list_gist_forks')
+        const { gists: forks, skipped } = readGists(response.data);
+        const pageInfo = parsePagination(response.headers, currentPage, size);
+        const toolNotes = new Notes();
+        toolNotes.addAll(
+          paginationNotes(pageInfo, forks.length, 'list_gist_forks')
         );
+        const skippedForks = skippedNote(skipped, 'fork');
+        if (skippedForks !== undefined) toolNotes.add(skippedForks);
         if (forks.some(hasUntrustedMetadata))
-          notes.add(UNTRUSTED_METADATA_NOTE);
+          toolNotes.add(UNTRUSTED_METADATA_NOTE);
         return untrustedResult({
           gistId: id,
-          pagination,
+          pagination: pageInfo,
           forks: forks.map(shapeGistSummary),
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );

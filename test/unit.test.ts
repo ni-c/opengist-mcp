@@ -240,7 +240,10 @@ describe('buildFilesPayload', () => {
       existing,
       false
     );
-    expect(Object.keys(payload.files).sort()).toEqual(['README.md', 'main.go']);
+    expect(Object.keys(payload.files).toSorted()).toEqual([
+      'README.md',
+      'main.go',
+    ]);
   });
 
   it('refuses two operations producing the same target name', () => {

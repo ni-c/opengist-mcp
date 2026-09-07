@@ -11,6 +11,7 @@ import {
 } from '../shape.js';
 
 import type { OpengistApi } from '../api.js';
+import { readGist, visibilityOf, visibilityRank } from '../boundary.js';
 import type { Approver, ConfirmationStore } from 'mcp-approval';
 import {
   errorResult,
@@ -19,7 +20,15 @@ import {
   ToolInputError,
   untrustedResult,
 } from '../result.js';
-import { filename, gistId, gistPath, visibility } from '../schema.js';
+import {
+  confirmToken,
+  expiresAt as expiresAtSchema,
+  filename,
+  gistId,
+  gistPath,
+  MAX_CONTENT_CHARS,
+  visibility,
+} from '../schema.js';
 
 const SUMMARY_OPTIONS = {
   includeContent: false,
@@ -29,12 +38,6 @@ const SUMMARY_OPTIONS = {
   maxCommits: 0,
   includeForks: false,
   includeCloneUrls: false,
-};
-
-const VISIBILITY_RANK: Record<string, number> = {
-  private: 0,
-  unlisted: 1,
-  public: 2,
 };
 
 /**
@@ -52,7 +55,7 @@ async function loadWritableGist(
   api: OpengistApi,
   id: string
 ): Promise<RawGist> {
-  const gist = (await api.get(gistPath(id))) as RawGist;
+  const gist = readGist(await api.get(gistPath(id)), gistPath(id));
   if (gist.archived) {
     throw new ToolInputError(
       `Gist "${id}" is archived and therefore read-only. Un-archive it in the Opengist web UI before changing it.`
@@ -84,6 +87,7 @@ export function registerGistWriteTools(
               content: z
                 .string()
                 .min(1)
+                .max(MAX_CONTENT_CHARS)
                 .describe(
                   'File content. Must not be empty — Opengist silently drops files without content.'
                 ),
@@ -102,8 +106,7 @@ export function registerGistWriteTools(
           .optional()
           .describe('Title of the gist; defaults to the first filename'),
         description: z.string().max(1000).optional(),
-        confirm_token: z
-          .string()
+        confirm_token: confirmToken
           .optional()
           .describe(
             'Confirmation token from a previous create_gist call with identical arguments. Only required when visibility is public or unlisted; omit on the first call.'
@@ -114,8 +117,7 @@ export function registerGistWriteTools(
           .describe(
             'Delete the gist automatically after this delay. Mutually exclusive with expiresAt.'
           ),
-        expiresAt: z
-          .string()
+        expiresAt: expiresAtSchema
           .optional()
           .describe(
             'Delete the gist automatically at this RFC 3339 timestamp. Mutually exclusive with expire.'
@@ -139,7 +141,7 @@ export function registerGistWriteTools(
     (
       {
         files,
-        visibility,
+        visibility: newVisibility,
         title,
         description,
         expire,
@@ -167,7 +169,7 @@ export function registerGistWriteTools(
           const timestamp = Date.parse(expiresAt);
           if (Number.isNaN(timestamp)) {
             throw new ToolInputError(
-              `expiresAt is not a valid RFC 3339 timestamp: ${expiresAt}`
+              'expiresAt has the shape of an RFC 3339 timestamp but is not a valid date.'
             );
           }
           if (timestamp <= Date.now()) {
@@ -184,8 +186,8 @@ export function registerGistWriteTools(
         // required `visibility` field prevents an accidental public default,
         // not a directed one: text inside a gist read earlier in the session
         // can ask for precisely this call. So it gets the same gate.
-        if (visibility !== 'private') {
-          const resource = `gist:create:${visibility}:${fingerprint({
+        if (newVisibility !== 'private') {
+          const resource = `gist:create:${newVisibility}:${fingerprint({
             files: files.map((file) => [file.filename, file.content]),
             title: title ?? null,
             description: description ?? null,
@@ -207,9 +209,9 @@ export function registerGistWriteTools(
               // The counts go in the sentence rather than into `details`: that
               // block is labelled as caller-supplied, and these are the one
               // thing here the server counted itself.
-              what: `create a ${visibility} gist of ${files.length} file(s), ${bytes} byte(s) in total`,
+              what: `create a ${newVisibility} gist of ${files.length} file(s), ${bytes} byte(s) in total`,
               consequence:
-                visibility === 'public'
+                newVisibility === 'public'
                   ? 'It is listed on the instance and readable by anyone. Content that has been read cannot be withdrawn.'
                   : 'Anyone with the URL can read it, and the URL may be shared onward. Content that has been read cannot be withdrawn.',
               fallbackNote:
@@ -239,7 +241,7 @@ export function registerGistWriteTools(
           files: Object.fromEntries(
             files.map((file) => [file.filename, { content: file.content }])
           ),
-          visibility,
+          visibility: newVisibility,
           ...(title !== undefined && { title }),
           ...(description !== undefined && { description }),
           ...(expire !== undefined && { expire }),
@@ -247,13 +249,13 @@ export function registerGistWriteTools(
         };
 
         const response = await api.post('/gists', body);
-        const gist = response.data as RawGist;
-        const notes = new Notes();
-        const shaped = shapeGistDetail(gist, SUMMARY_OPTIONS, notes);
+        const gist = readGist(response.data, '/gists');
+        const toolNotes = new Notes();
+        const shaped = shapeGistDetail(gist, SUMMARY_OPTIONS, toolNotes);
         return untrustedResult({
           created: true,
           ...shaped,
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );
@@ -291,6 +293,7 @@ export function registerGistWriteTools(
                 // refuses to emit.
                 content: z
                   .string()
+                  .max(MAX_CONTENT_CHARS)
                   .describe(
                     'The complete new content of the file; may be empty to blank the file. Use delete_gist_files to remove it.'
                   ),
@@ -301,6 +304,7 @@ export function registerGistWriteTools(
                 newFilename: filename.describe('The new filename'),
                 content: z
                   .string()
+                  .max(MAX_CONTENT_CHARS)
                   .optional()
                   .describe('Optionally replace the content while renaming'),
               }),
@@ -316,8 +320,7 @@ export function registerGistWriteTools(
           .describe(
             'Allow a write operation to add a file that does not exist yet. Off by default so a typo in a filename cannot silently create a duplicate file.'
           ),
-        confirm_token: z
-          .string()
+        confirm_token: confirmToken
           .optional()
           .describe(
             'Only needed when widening the visibility, or when changing anything about a gist that is not private. Omit on the first call; the refusal returns the token.'
@@ -375,13 +378,17 @@ export function registerGistWriteTools(
         }
 
         const gist = await loadWritableGist(api, id);
-        const current = gist.visibility ?? 'private';
+        // The instance's word, or `unknown` — which ranks as private, so a
+        // change away from it is a widening and is asked about. This used to
+        // be a lookup in an object literal, where `constructor` answered with
+        // a function and the comparison below was `NaN > 2`: false, and the
+        // guard silently off.
+        const current = visibilityOf(gist.visibility);
         // What the gist will be visible as once this call is done.
         const effective = newVisibility ?? current;
         const widens =
           newVisibility !== undefined &&
-          (VISIBILITY_RANK[newVisibility] ?? 0) >
-            (VISIBILITY_RANK[current] ?? 0);
+          visibilityRank(newVisibility) > visibilityRank(current);
         // A title and a description are content out of the model's context in
         // exactly the same way a file body is — `create_gist` fingerprints all
         // three together for that reason — and on a public gist they are the
@@ -485,9 +492,9 @@ export function registerGistWriteTools(
 
         const previousSha = gist.commits?.[0]?.version;
         const response = await api.patch(gistPath(id), body);
-        const updated = response.data as RawGist;
-        const notes = new Notes();
-        const shaped = shapeGistDetail(updated, SUMMARY_OPTIONS, notes);
+        const updated = readGist(response.data, gistPath(id));
+        const toolNotes = new Notes();
+        const shaped = shapeGistDetail(updated, SUMMARY_OPTIONS, toolNotes);
 
         const touched = new Set(
           payload === undefined
@@ -498,9 +505,9 @@ export function registerGistWriteTools(
                 ...payload.renamed.map((rename) => rename.from),
               ]
         );
-        notes.add('Files that were not listed were left unchanged.');
+        toolNotes.add('Files that were not listed were left unchanged.');
         if (previousSha !== undefined) {
-          notes.add(
+          toolNotes.add(
             `The state before this change stays retrievable: get_gist with sha="${previousSha}".`
           );
         }
@@ -520,7 +527,7 @@ export function registerGistWriteTools(
             untouched: existing.filter((name) => !touched.has(name)),
           },
           previousRevision: previousSha,
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );
@@ -539,8 +546,7 @@ export function registerGistWriteTools(
           .min(1)
           .max(50)
           .describe('The files to delete'),
-        confirm_token: z
-          .string()
+        confirm_token: confirmToken
           .optional()
           .describe(
             'Confirmation token from a previous delete_gist_files call for the same gist and the same files. Omit on the first call.'
@@ -562,7 +568,7 @@ export function registerGistWriteTools(
     },
     ({ gistId: id, filenames, confirm_token }, mcp) =>
       run(async () => {
-        const sorted = [...new Set(filenames)].sort();
+        const sorted = [...new Set(filenames)].toSorted();
         // Binding the token to the file set stops a confirmation for one file
         // from being replayed to delete additional ones.
         const fileSetFingerprint = createHash('sha256')
@@ -623,13 +629,13 @@ export function registerGistWriteTools(
 
         const files = Object.fromEntries(sorted.map((name) => [name, null]));
         const response = await api.patch(gistPath(id), { files });
-        const updated = response.data as RawGist;
-        const notes = new Notes();
-        const shaped = shapeGistDetail(updated, SUMMARY_OPTIONS, notes);
+        const updated = readGist(response.data, gistPath(id));
+        const toolNotes = new Notes();
+        const shaped = shapeGistDetail(updated, SUMMARY_OPTIONS, toolNotes);
         return untrustedResult({
           deletedFiles: sorted,
           ...shaped,
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );
@@ -643,8 +649,7 @@ export function registerGistWriteTools(
         'The first call returns a short-lived confirmation token; ask the user for confirmation, then call again with confirm_token.',
       inputSchema: z.object({
         gistId,
-        confirm_token: z
-          .string()
+        confirm_token: confirmToken
           .optional()
           .describe(
             'Confirmation token from a previous delete_gist call for the same gist. Omit on the first call.'
@@ -673,10 +678,12 @@ export function registerGistWriteTools(
         // Fetched on every call rather than only on the first: the approval now
         // renders these counts whichever way the answer arrives, and checking
         // that the gist is still there before deleting it is worth one GET.
-        const gist = (await api.get(gistPath(id))) as RawGist;
+        const gist = readGist(await api.get(gistPath(id)), gistPath(id));
         // Only server-side metadata is echoed here. Title, description, topics
         // and filenames are user-supplied text and could carry instructions
-        // aimed at manufacturing a confirmation.
+        // aimed at manufacturing a confirmation. The visibility is the
+        // instance's word only if it is one of the three; the timestamp only
+        // in ISO shape — `readGist` guarantees both.
         const outcome = await approval.requestApproval(
           server,
           mcp,
@@ -685,8 +692,9 @@ export function registerGistWriteTools(
             what: `delete gist ${id}`,
             consequence:
               'The git repository with all revisions is destroyed. This cannot be undone. ' +
-              `Gist: visibility=${gist.visibility}, ${Object.keys(gist.files ?? {}).length} file(s), ` +
-              `${gist.fork_count ?? 0} fork(s), ${gist.like_count ?? 0} like(s), created ${gist.created_at}` +
+              `Gist: visibility=${visibilityOf(gist.visibility)}, ${Object.keys(gist.files ?? {}).length} file(s), ` +
+              `${gist.fork_count ?? 0} fork(s), ${gist.like_count ?? 0} like(s)` +
+              `${typeof gist.created_at === 'string' ? `, created ${gist.created_at}` : ''}` +
               `${gist.archived ? ', archived' : ''}.`,
             fallbackNote:
               'Title and description are withheld on purpose (user-supplied text).',
@@ -743,18 +751,18 @@ export function registerGistWriteTools(
     ({ gistId: id }) =>
       run(async () => {
         const response = await api.post(gistPath(id, '/forks'));
-        const gist = response.data as RawGist;
-        const notes = new Notes();
-        const shaped = shapeGistDetail(gist, SUMMARY_OPTIONS, notes);
+        const gist = readGist(response.data, gistPath(id, '/forks'));
+        const toolNotes = new Notes();
+        const shaped = shapeGistDetail(gist, SUMMARY_OPTIONS, toolNotes);
         if (response.status === 200) {
-          notes.add(
+          toolNotes.add(
             'You had already forked this gist; the existing fork is returned instead of a new one.'
           );
         }
         return untrustedResult({
           created: response.status === 201,
           ...shaped,
-          notes: notes.list(),
+          notes: toolNotes.list(),
         });
       })
   );

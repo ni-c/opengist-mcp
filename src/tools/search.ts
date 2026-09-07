@@ -16,6 +16,7 @@ import {
 } from '../shape.js';
 
 import type { OpengistApi } from '../api.js';
+import { readGists } from '../boundary.js';
 import { READ_ONLY } from './annotations.js';
 import { parsePagination } from '../pagination.js';
 import { run, untrustedResult } from '../result.js';
@@ -63,6 +64,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
         in: z
           .array(z.enum(['title', 'description', 'topics', 'owner']))
           .min(1)
+          .max(4)
           .default(['title', 'description', 'topics'])
           .describe('Which fields to match against'),
         scope: gistScope.default('mine'),
@@ -138,6 +140,7 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
         let total: number | null = null;
         let stopped: string | null = null;
         let matchedUntrustedMetadata = false;
+        let skippedEntries = 0;
         let nextPage: number | null = 1;
 
         while (nextPage !== null) {
@@ -157,7 +160,8 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
               since: updatedSince,
             })
           );
-          const gists = (response.data ?? []) as RawGist[];
+          const { gists, skipped } = readGists(response.data);
+          skippedEntries += skipped;
           const pagination = parsePagination(
             response.headers,
             nextPage,
@@ -219,6 +223,11 @@ export function registerSearchTools(server: McpServer, api: OpengistApi): void {
         scanNotes.push(
           'Opengist has no search API — this was a client-side scan of the list endpoints, and file contents were not searched.'
         );
+        if (skippedEntries > 0) {
+          scanNotes.push(
+            `${skippedEntries} entry(ies) in the scanned pages were not objects and were skipped.`
+          );
+        }
         if (matchedUntrustedMetadata) scanNotes.push(UNTRUSTED_METADATA_NOTE);
 
         return untrustedResult({

@@ -89,6 +89,30 @@ export const since = z
   .optional()
   .describe('Only return gists updated at or after this RFC 3339 timestamp');
 
+/**
+ * The two-call token a guarded tool handed back. Thirty-two hexadecimal
+ * characters from the library; the ceiling keeps a megabyte of caller text
+ * out of the comparison.
+ */
+export const confirmToken = z.string().max(64);
+
+/** An RFC 3339 timestamp from the caller, in the same shape `since` takes. */
+export const expiresAt = z
+  .string()
+  .max(40)
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/,
+    'must be an RFC 3339 timestamp, e.g. 2026-01-01T00:00:00Z'
+  );
+
+/**
+ * Ceiling on one file body a caller sends. Opengist sets none; the response
+ * ceiling is 8 MiB, and a body a model pastes through a tool call is nowhere
+ * near a megabyte. Bounding it bounds the fingerprint, the request body and
+ * the memory a single call can ask for.
+ */
+export const MAX_CONTENT_CHARS = 1_000_000;
+
 /** Builds the path of a gist resource, e.g. `/gists/abc123/commits`. */
 export function gistPath(id: string, suffix = ''): string {
   return `/gists/${encodeURIComponent(id)}${suffix}`;

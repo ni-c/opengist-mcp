@@ -6,7 +6,8 @@ import { OpengistApiError, type OpengistApi } from '../api.js';
 import { READ_ONLY } from './annotations.js';
 import { jsonResult, run, ToolInputError, untrustedResult } from '../result.js';
 import { gistId, gistPath, username } from '../schema.js';
-import { shapeUserDetail, type RawUser } from '../shape.js';
+import { shapeUserDetail } from '../shape.js';
+import { readUser } from '../boundary.js';
 
 /**
  * Checks whether the gist is liked. The API answers 204 for "liked" and 404
@@ -98,7 +99,7 @@ export function registerUserTools(server: McpServer, api: OpengistApi): void {
         }
         return untrustedResult({
           self: name === undefined && userId === undefined,
-          user: shapeUserDetail(response as RawUser),
+          user: shapeUserDetail(readUser(response)),
         });
       })
   );

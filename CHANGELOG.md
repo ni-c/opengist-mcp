@@ -9,19 +9,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] - 2026-09-07
 
+### Security
+
+- **The access token cannot reach a tool result through the HTTP layer.**
+  `OPENGIST_TOKEN` had no shape check, so a token with a line break inside it — a
+  paste wrapped onto two lines — reached `fetch`, whose refusal is
+  `Headers.append: "Bearer …" is an invalid header value.` with the whole value
+  quoted, and the generic error path put that sentence into the tool result.
+  Verified on Node 24's global fetch and on undici 8.10. The value is now trimmed
+  and checked at startup (printable ASCII, at most 1024 characters; the message
+  names the length and the position of the offending character, never the value),
+  every header is checked again in front of every request, and whatever the
+  transport still throws has the token redacted out of it.
+- **Nothing the instance sends is trusted by type.** Every response used to be a
+  TypeScript cast. A `files` entry that was `null`, a `content` that was a number,
+  a `commits` or `forks` that was a string, a `title` that was a number threw a
+  `TypeError` out of the projection; a `like_count` of `1e999` (`Infinity` after
+  parsing), a `topics` with a number in it, a commit `version` that was a number,
+  an `X-Page` header of `1e300` or a `Link` header with a four-hundred-digit page
+  failed the output schema for the whole listing. All of it is reachable from the
+  instance, from a proxy in front of it, or from whatever a mistyped
+  `OPENGIST_URL` lands on. A new boundary (`src/boundary.ts`) reads every record
+  field by field: a field of the wrong type is absent, a count is finite, an
+  identifier has its shape, a display string is cut at 2000 characters with a note,
+  related gists are read one level deep, and an entry that is not an object is
+  counted and skipped rather than fatal. A property test drives every read tool
+  through the server with shaped and arbitrary JSON.
+- **`get_gist_file` declared an output schema it did not keep.** The result carries
+  `offset`, the schema did not name it, and the schema is closed — so every client
+  that validates structured content (the official SDK client does, once it has
+  listed the tools) refused every successful call with a protocol error. Found the
+  moment the test harness started listing tools before calling them, which it now
+  does in every suite.
+- **A visibility word the instance chose could switch the widening guard off.**
+  The rank lookup was an object literal keyed by the instance's `visibility`
+  string; `constructor` or `__proto__` answered with a function, the comparison was
+  `NaN`, and a change from that to `public` was not a widening. Anything outside
+  the three known words now ranks as `private`, so a change away from it asks.
+- **The instance's words stay out of prompts, notes and request paths.** The
+  confirmation for `delete_gist` quoted `visibility` and `created_at` as received;
+  `update_gist` quoted the current visibility; the previous-revision note and
+  `get_gist_file`'s revision lookup used a commit id that had never been checked,
+  and the lookup spliced it into the raw-file path. Visibility is validated to the
+  three words or `unknown`, a timestamp is quoted only in ISO shape, and a commit id
+  has to be four to forty hexadecimal characters to be used at all.
+- **Every string that leaves is cleaned.** Titles, descriptions, topics, filenames,
+  git author names, the content type and file bodies went into the model context
+  with escape sequences intact, and a `slice` at a character budget could cut a
+  surrogate pair in half — a lone surrogate that some clients cannot encode. One
+  walk over every result strips C0 (except tab, line feed and carriage return), C1
+  and DEL and repairs lone surrogates; where that touches a file body, the result
+  says how many characters were removed from which file.
+- **The status is read before the body.** A `401` behind a reverse proxy's
+  multi-megabyte login page surfaced as "the answer was larger than 8388608 bytes
+  and was refused", never as a 401 with the credential hint. The status decides
+  first; an error body is read under its own 64 KiB ceiling, cut rather than
+  refused, stripped of control characters, and labelled as the instance's text.
+- **Diagnostics describe a value rather than print it.** `ELICITATION` echoed an
+  unrecognised value in full, and the URL check printed the scheme of a value that
+  had one — both variables sit next to the token in every compose file, and a
+  fifty-character hexadecimal key with a colon after it is a valid URL whose scheme
+  is the key. Both now say how long the value is.
+- **URLs the instance sends lose their credentials.** `html_url`, `clone_url`,
+  `ssh_url` and `avatar_url` are redacted up to the last `@` before the path.
+- **Filenames the instance chose are cleaned and counted in error messages.** The
+  "no such file" refusal quoted the near match and every existing filename as
+  received — twenty thousand of them, for one `git push`, into one error result the
+  budget never sees. At most twenty are listed, cleaned and cut, with the rest
+  counted.
+- **CI reviews the dependency change of a pull request** (`dependency-review-action`,
+  `fail-on-severity: high`), the GitHub release verifies its tag, the integration
+  job installs with `--ignore-scripts` like every other job, and the runtime image
+  no longer carries yarn or the lockfile.
+- **mcp-approval 0.8.2.** A sealed dialog answer is single-use since 0.8.1: the same `requestState` presented again within its lifetime used to be accepted again, and with a resource key that is the same every time — a whole stream, a fixed set of targets — every replay landed. npm users on `^0.8.0` already had the fix; the Docker image is built from the lockfile and carried 0.8.0 until this release.
+
 ### Added
 
 - A demo GIF in the README and on the documentation home page, recorded from
   `docs/demo.tape` with no credentials: the tool list, the same list narrowed by
   the `essential` preset, and the startup abort a mistyped tool name produces.
-
-### Changed
-
-- The tool reference marks the `essential` preset and the tools that ask a
-  person before they act, per tool rather than only in the introduction. A test
-  keeps both sets in step with the code.
-
-### Added
 
 - The server introduces itself in full. `title`, `description`, `websiteUrl` and
   `icons` now travel with `name` and `version`, so a client that shows a server
@@ -35,6 +101,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The tool reference marks the `essential` preset and the tools that ask a
+  person before they act, per tool rather than only in the introduction. A test
+  keeps both sets in step with the code.
+
 - Source maps are no longer published in the npm tarball. Node reads them only
   under `--enable-source-maps`, which nothing here sets, and the maps pointed at
   a `src/` this package does not ship — so a stack trace under that flag named a
@@ -47,14 +117,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `OPENGIST_URL` is stored from the parsed URL (origin plus path) rather than as the
+  raw string, so a query string or fragment is dropped with a warning instead of
+  being glued in front of every request path; trailing slashes come off in a counted
+  loop rather than through `/\/+$/`, which cost 1.6 seconds at 80 000 of them.
+- The result ceiling is measured on the indented text block that is emitted, not on
+  the compact form — the same value, two to three times the characters.
+- Caller strings have ceilings: `confirm_token` (64), `expiresAt` (RFC 3339 shape,
+  no longer echoed when malformed), a file body in `create_gist` and `update_gist`
+  (1 000 000 characters), and `search_gists`'s `in` list (4).
+- The insecure-TLS path has a test of its own: undici's fetch and the relaxed
+  dispatcher are used under the switch and not otherwise.
+- `SECURITY.md` argued from a transport the code stopped using in 0.4.0 ("this
+  server offers only 2025-era revisions") and asked for an at-most-once record that
+  `mcp-approval` 0.8.1 has since provided. Rewritten against the current source.
 - `prepublishOnly` runs the linter and the test suite again. It had been reduced
   to `typecheck && build`, so `npm publish` from a workstation would have shipped
   a package whose tests were never run — the one moment that check matters most.
   CI was unaffected and stays the real gate; this closes the local path.
-
-### Security
-
-- **mcp-approval 0.8.2.** A sealed dialog answer is single-use since 0.8.1: the same `requestState` presented again within its lifetime used to be accepted again, and with a resource key that is the same every time — a whole stream, a fixed set of targets — every replay landed. npm users on `^0.8.0` already had the fix; the Docker image is built from the lockfile and carried 0.8.0 until this release.
 
 ## [0.4.0] - 2026-09-03
 

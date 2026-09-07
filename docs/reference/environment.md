@@ -12,13 +12,16 @@ Only the exact string `true` enables a boolean. `1`, `yes` and `TRUE` are false.
 
 ## `OPENGIST_URL`
 
-The root of the instance, not the API path. A trailing slash is stripped, and a
-trailing `/api` is accepted and removed rather than producing `/api/api`.
+The root of the instance, not the API path. The value is parsed and stored as
+origin plus path: trailing slashes are stripped, a trailing `/api` is accepted and
+removed rather than producing `/api/api`, and a query string or fragment is dropped
+with a warning.
 
 The server exits at startup if the value is not a valid URL, uses a protocol other
-than `http:`/`https:`, or contains a username or password. It warns and continues for
-plain `http://` to a non-loopback host — the token and every gist would travel
-unencrypted.
+than `http:`/`https:`, or contains a username or password. None of those messages
+print the value — the variable holding something unexpected is, often enough, holding
+the token meant for the line below it. It warns and continues for plain `http://` to
+a non-loopback host — the token and every gist would travel unencrypted.
 
 ## `OPENGIST_TOKEN`
 
@@ -29,6 +32,13 @@ does not fail, it silently returns only public gists.
 
 The value is read once at startup and then removed from `process.env`, so it is not
 inherited by child processes and does not appear in `/proc/<pid>/environ`.
+
+The value is trimmed, and must then be printable ASCII of at most 1024 characters —
+the shape an HTTP header value has to have. A value that is not, such as a token
+wrapped onto two lines by a paste, stops the server at startup with a message naming
+the length and the position of the offending character, never the value. The
+alternative was the HTTP layer refusing it later, with a message that quotes the
+whole header.
 
 A token that does not start with `og_` produces a warning: the usual cause is an
 account password pasted in its place.
@@ -53,7 +63,8 @@ Two ways it differs from every other variable here:
   environment, not just this one. That is the point of it and also its risk; see
   [Asking a person](/guide/approval).
 - **Fatal on anything else.** Where the `OPENGIST_*` booleans fail _off_ on a typo,
-  this one stops the server with exit code 1. It is the only variable here that
+  this one stops the server with exit code 1, describing the value by its length
+  rather than printing it. It is the only variable here that
   defaults to _on_, and a typo that fell back would leave the dialog running while
   you believed it was off.
 

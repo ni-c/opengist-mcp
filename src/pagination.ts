@@ -10,15 +10,19 @@ export interface Pagination {
   prevPage: number | null;
 }
 
+/**
+ * A page count as digits: at most fifteen, which is a safe integer by
+ * construction. `Number('1e300')` is an integer to `Number.isInteger` and not
+ * to the `.int()` the output schema declares, so one such header used to take
+ * the whole listing down; `Number('')` is 0, which turned an empty header into
+ * page 0 of a 1-based scheme.
+ */
+const DIGITS = /^[0-9]{1,15}$/;
+
 function parseInteger(value: string | null): number | null {
-  // An empty or blank header is not a zero. `Number('')` and `Number(' ')` are
-  // both 0, which passes every check below and turns a header the instance sent
-  // empty into a claim: page 0, which does not exist in a 1-based scheme, or a
-  // total of zero gists on an account that has some. Absent is the honest
-  // reading, and it falls back to what the caller asked for.
-  if (value === null || value.trim() === '') return null;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return DIGITS.test(trimmed) ? Number(trimmed) : null;
 }
 
 /**
@@ -31,7 +35,7 @@ function pageFromLink(link: string | null, rel: string): number | null {
   if (!link) return null;
   for (const part of link.split(',')) {
     if (!new RegExp(`rel="${rel}"`).test(part)) continue;
-    const match = /[?&]page=(\d+)/.exec(part);
+    const match = /[?&]page=([0-9]{1,15})(?![0-9])/.exec(part);
     if (match?.[1] !== undefined) return Number(match[1]);
   }
   return null;

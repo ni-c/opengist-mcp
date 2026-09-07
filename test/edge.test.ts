@@ -12,6 +12,7 @@ import {
 } from './harness.js';
 
 import { Notes, shapeGistDetail, shapeUser } from '../src/shape.js';
+import { readGist } from '../src/boundary.js';
 import { MAX_RESULT_BYTES } from '../src/result.js';
 import { withQuery } from '../src/schema.js';
 
@@ -157,13 +158,17 @@ describe('oversized results', () => {
   });
 
   it('cuts a result whose bulk is not in any file content', async () => {
-    // Stripping only replaces `content` strings. A hundred gists with a long
-    // description each carries megabytes past that replacer untouched, and
-    // every one of them is a gist anybody can push.
+    // Stripping only replaces `content` strings. A hundred gists with fifty
+    // long topics each carries megabytes past that replacer untouched, and
+    // every one of them is a gist anybody can push. (A long *description*
+    // no longer does it: the boundary cuts one at 2000 characters.)
     const gists = Array.from({ length: 100 }, (_, i) =>
       gistFixture({
         id: `g${i}`,
-        description: 'd'.repeat(30_000),
+        topics: Array.from(
+          { length: 50 },
+          (__, t) => `t${t}${'x'.repeat(190)}`
+        ),
         files: undefined,
         commits: [],
       })
@@ -525,22 +530,27 @@ describe('untrusted-data markers on embedded gists', () => {
   });
 
   it('allowlists the keys of change_status', () => {
+    // The allowlist lives at the boundary now, so the record goes through
+    // `readGist` the way every response does.
     const notes = new Notes();
     const shaped = shapeGistDetail(
-      {
-        id: 'a',
-        files: {},
-        commits: [
-          {
-            version: 'abc',
-            change_status: {
-              additions: 3,
-              deletions: 1,
-              injected: 99,
-            } as Record<string, number>,
-          },
-        ],
-      },
+      readGist(
+        {
+          id: 'a',
+          files: {},
+          commits: [
+            {
+              version: 'abcd',
+              change_status: {
+                additions: 3,
+                deletions: 1,
+                injected: 99,
+              },
+            },
+          ],
+        },
+        '/gists/a'
+      ),
       FULL_OPTIONS,
       notes
     );

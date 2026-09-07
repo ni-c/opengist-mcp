@@ -9,6 +9,7 @@ import {
   missingConfigMessage,
   type Config,
 } from './config.js';
+import { assertHeaderValue, redactSecret } from './text.js';
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -20,6 +21,14 @@ const REQUEST_TIMEOUT_MS = 30_000;
  * returns. 8 MB is far above any legitimate gist and far below trouble.
  */
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Ceiling on an *error* body. Read under its own, much smaller limit and cut
+ * rather than refused: the status is the answer, the body is a hint, and a
+ * reverse proxy answering 401 with a two-megabyte login page must surface as
+ * "401" with the credential hint — not as "the answer was too large".
+ */
+const MAX_ERROR_BODY_BYTES = 64 * 1024;
 
 /** Just enough of the Headers interface for what the pagination parser needs. */
 export interface ResponseHeaders {
@@ -57,6 +66,7 @@ export class OpengistApiError extends Error {
 export class OpengistApi {
   private readonly config: Config;
   private readonly baseUrl: string;
+  private readonly token: string | undefined;
   private readonly authHeader: string;
   /**
    * Only set when `OPENGIST_INSECURE_TLS` is enabled. Scopes the relaxed
@@ -68,6 +78,7 @@ export class OpengistApi {
   constructor(config: Config) {
     this.config = config;
     this.baseUrl = config.baseUrl ?? '';
+    this.token = config.token;
     this.authHeader = `Bearer ${config.token ?? ''}`;
     if (config.insecureTls) {
       this.insecureDispatcher = new Agent({
@@ -104,6 +115,13 @@ export class OpengistApi {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(body);
     }
+    // Before the HTTP layer sees them: undici refuses a header value with a
+    // control character in it by quoting the value in full, and the value of
+    // the first one is the token. `loadConfig` refuses such a token at
+    // startup, but a Config can be built without `loadConfig`.
+    for (const [name, value] of Object.entries(headers)) {
+      assertHeaderValue(name, value);
+    }
 
     const url = `${this.baseUrl}${path}`;
     // The insecure dispatcher requires undici's own fetch; the default path
@@ -112,17 +130,44 @@ export class OpengistApi {
     // already forbids cross-origin hops, this makes it independent of that.
     const useInsecure =
       this.insecureDispatcher !== undefined && this.isConfiguredOrigin(url);
-    const response = useInsecure
-      ? await undiciFetch(url, {
-          ...init,
-          dispatcher: this.insecureDispatcher,
-        } as UndiciRequestInit)
-      : await fetch(url, init);
-    const text = await readBoundedBody(response, method, path);
+    // The minimal shape both fetches agree on: undici's `Response` and the
+    // global one are type-incompatible in their iterators.
+    let response: {
+      ok: boolean;
+      status: number;
+      headers: ResponseHeaders;
+      body?: unknown;
+      text(): Promise<string>;
+    };
+    try {
+      response = useInsecure
+        ? await undiciFetch(url, {
+            ...init,
+            dispatcher: this.insecureDispatcher,
+          } as UndiciRequestInit)
+        : await fetch(url, init);
+    } catch (error) {
+      // The last line of defence for the transport's own messages: whatever
+      // a library chose to quote, the token is not part of it.
+      throw new Error(
+        redactSecret(
+          error instanceof Error ? error.message : String(error),
+          this.token
+        ),
+        // The cause is kept for a debugger; it never reaches a result, which
+        // is built from the message alone.
+        { cause: error }
+      );
+    }
 
+    // The status decides; the body is read afterwards and under the ceiling
+    // that fits its role. An error body that a proxy padded past the data
+    // ceiling used to surface as "too large" and hide the 401 behind it.
     if (!response.ok) {
+      const text = await readErrorBody(response);
       throw new OpengistApiError(response.status, text, method, path);
     }
+    const text = await readBoundedBody(response, method, path);
     return { status: response.status, text, headers: response.headers };
   }
 
@@ -260,4 +305,43 @@ async function readBoundedBody(
     chunks.push(value);
   }
   return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
+ * Reads an error body, cut at {@link MAX_ERROR_BODY_BYTES}. Never throws: a
+ * body that cannot be read is an empty hint next to a status that is still
+ * the answer.
+ */
+async function readErrorBody(response: {
+  body?: unknown;
+  text(): Promise<string>;
+}): Promise<string> {
+  try {
+    const body = response.body;
+    if (!hasStreamingBody(body)) {
+      const text = await response.text();
+      return text.length > MAX_ERROR_BODY_BYTES
+        ? text.slice(0, MAX_ERROR_BODY_BYTES)
+        : text;
+    }
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value === undefined) continue;
+      chunks.push(value);
+      total += value.byteLength;
+      if (total >= MAX_ERROR_BODY_BYTES) {
+        await reader.cancel();
+        break;
+      }
+    }
+    return Buffer.concat(chunks)
+      .subarray(0, MAX_ERROR_BODY_BYTES)
+      .toString('utf8');
+  } catch {
+    return '';
+  }
 }

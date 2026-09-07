@@ -128,5 +128,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release create "$GITHUB_REF_NAME"
+          --verify-tag
           --title "$GITHUB_REF_NAME"
           --notes-file release-notes.md

@@ -807,10 +807,11 @@ describe('L-10 every string that leaves is cleaned', () => {
   });
 
   it('answers the same in both channels when upstream sends __proto__', async () => {
-    const raw = JSON.stringify(gistFixture()).replace(
-      '{',
-      '{"__proto__":{"polluted":true},'
-    );
+    // The key goes in as text: an object literal would set a prototype, not a
+    // key, and JSON.stringify would never write it.
+    const raw =
+      '{"__proto__":{"polluted":true},' +
+      JSON.stringify(gistFixture()).slice(1);
     stubFetch(
       () =>
         new Response(raw, {

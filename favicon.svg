@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="opengist-mcp">
+  <rect width="32" height="32" rx="7" fill="#4f46e5" />
+  <!-- A gist: a document with a git commit node on it. -->
+  <path d="M19.4 5.6H10.6a2.1 2.1 0 0 0-2.1 2.1v16.6a2.1 2.1 0 0 0 2.1 2.1h10.8a2.1 2.1 0 0 0 2.1-2.1V9.6z"
+        fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linejoin="round" />
+  <path d="M19.4 5.6 23.5 9.6h-4.1z" fill="#a5b4fc" />
+  <g stroke="#ffffff" stroke-width="1.9" fill="none" stroke-linecap="round">
+    <circle cx="16" cy="14" r="2.7" />
+    <circle cx="16" cy="22.2" r="2.7" />
+    <path d="M16 16.7v2.8" />
+  </g>
+</svg>

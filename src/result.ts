@@ -131,20 +131,26 @@ function render(data: Record<string, unknown>): string {
 }
 
 /**
- * Rebuilds a result with every string cleaned. `Object.fromEntries` rather
- * than `out[key] = …`: a key named `__proto__` — legal JSON from any instance
- * — would otherwise set the prototype and drop the field.
+ * Rebuilds a result with every string cleaned, and drops a key named
+ * `__proto__` at every depth. It is legal JSON from any instance and arrives
+ * from `JSON.parse` as an own property, which `Object.fromEntries` and
+ * `JSON.stringify` both keep, so the text block would carry it. A client
+ * parses `structuredContent` against the output schema, and zod assigns
+ * fields — on that name that sets a prototype instead, so the field vanishes
+ * from that channel only and the two disagree. The key is checked on the
+ * cleaned name, so a control character inside it cannot hide it.
  */
 function cleanValue(value: unknown): unknown {
   if (typeof value === 'string') return cleanText(value);
   if (Array.isArray(value)) return value.map(cleanValue);
   if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [
-        cleanText(key),
-        cleanValue(entry),
-      ])
-    );
+    const out: [string, unknown][] = [];
+    for (const [key, entry] of Object.entries(value)) {
+      const name = cleanText(key);
+      if (name === '__proto__') continue;
+      out.push([name, cleanValue(entry)]);
+    }
+    return Object.fromEntries(out);
   }
   return value;
 }

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- #region changelog -->
 
+## [Unreleased]
+
+### Fixed
+
+- A `__proto__` key in an answer from Opengist is dropped, at any depth. It
+  would have reached the text block but not `structuredContent`, because a
+  client parses that against the output schema and zod assigns fields, which on
+  that name sets a prototype instead. The two channels then disagreed about the
+  same answer. Nothing sent the key through today; the boundary allowlists it out.
+
 ## [0.5.0] - 2026-09-07
 
 ### Security

@@ -786,16 +786,49 @@ describe('L-10 every string that leaves is cleaned', () => {
     );
   });
 
-  it('keeps a __proto__ key as an own property through the walk', () => {
-    const data = JSON.parse('{"__proto__":"x","ok":true}') as Record<
-      string,
-      unknown
-    >;
+  it('drops a __proto__ key at every depth and nothing else', () => {
+    const data = JSON.parse(
+      '{"__proto__":"x","ok":true,"nested":{"__proto__":{"a":1},"keep":1},' +
+        '"list":[{"__proto__":2,"n":3}],"nul":{"__proto__":null},' +
+        '"__pro\\u0000to__":"hidden"}'
+    ) as Record<string, unknown>;
     const result = jsonResult(data);
     const structured = result.structuredContent as Record<string, unknown>;
-    expect(Object.hasOwn(structured, '__proto__')).toBe(true);
+    expect(Object.hasOwn(structured, '__proto__')).toBe(false);
     expect(Object.getPrototypeOf(structured)).toBe(Object.prototype);
-    expect(resultText(result)).toContain('"__proto__": "x"');
+    expect(resultText(result)).not.toContain('__proto__');
+    expect(structured).toEqual({
+      ok: true,
+      nested: { keep: 1 },
+      list: [{ n: 3 }],
+      nul: {},
+    });
+    expect(resultJson(result)).toEqual(structured);
+  });
+
+  it('answers the same in both channels when upstream sends __proto__', async () => {
+    // The key goes in as text: an object literal would set a prototype, not a
+    // key, and JSON.stringify would never write it.
+    const raw =
+      '{"__proto__":{"polluted":true},' +
+      JSON.stringify(gistFixture()).slice(1);
+    stubFetch(
+      () =>
+        new Response(raw, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+    );
+    const client = await connect();
+    const result = (await client.callTool({
+      name: 'get_gist',
+      arguments: { gistId: 'abc123' },
+    })) as CallToolResult;
+    expect(result.isError).toBeFalsy();
+    expect(resultText(result)).not.toContain('__proto__');
+    expect(resultJson(result)).toEqual(
+      JSON.parse(JSON.stringify(result.structuredContent))
+    );
   });
 
   it('leaves tab, line feed and carriage return alone', () => {

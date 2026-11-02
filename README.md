@@ -50,7 +50,7 @@ the call that fetches the rest.
 
 ## Requirements
 
-- Node.js 22 or newer
+- Node.js 24 or newer
 - An Opengist instance with the REST API enabled
 - An Opengist Personal Access Token (Settings → Access Tokens). Scopes:
   - `gist:read` — read gists, including your private and unlisted ones

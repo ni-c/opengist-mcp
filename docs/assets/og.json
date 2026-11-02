@@ -4,5 +4,5 @@
     "MCP server for Opengist — search, read and write snippets",
     "in the self-hosted pastebin that is really a Git server."
   ],
-  "badges": ["14 tools", "MIT", "Node ≥22"]
+  "badges": ["14 tools", "MIT"]
 }

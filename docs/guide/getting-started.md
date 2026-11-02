@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Node.js ≥ 22
+- Node.js ≥ 24
 - A running Opengist instance with the REST API enabled (`api.enabled`, which is the
   default in recent releases)
 - An Opengist Personal Access Token — see [Configuration](/guide/configuration)
